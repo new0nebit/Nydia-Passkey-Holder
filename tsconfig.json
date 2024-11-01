@@ -1,14 +1,13 @@
 {
   "compilerOptions": {
-    "target": "es2023",
-    "module": "commonjs",
+    "target": "es6",
+    "module": "esnext",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "lib": ["es2023", "dom"],
-    "outDir": "./dist",
-    "rootDir": "./src"
+    "lib": ["es6", "dom"],
+    "moduleResolution": "bundler",
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules"]
