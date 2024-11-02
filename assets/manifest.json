@@ -1,33 +1,34 @@
 {
   "manifest_version": 3,
-  "name": "Passkey Holder",
-  "version": "0.1",
-  "description": "Intercepting navigator.credentials.create() and navigator.credentials.get() calls in the WebAuthn API.",
+  "name": "Nydia: Passkey Holder",
+  "version": "0.0.1",
+  "description": "Browser extension for decentralized passkey storage on the Sia network.",
   "author": "Oleh N.",
-
+  
   "permissions": [
     "storage",
     "activeTab",
     "scripting"
   ],
   "host_permissions": [
-    "http://*/",
-    "https://*/",
-    "file:///*"
+    "http://*/*",
+    "https://*/*"
   ],
   "content_scripts": [
     {
       "all_frames": true,
-      "js": ["inject.js"],
-      "css": ["webauthn-styles.css"],
+      "js": ["injector.js"],
       "matches": ["http://*/*", "https://*/*"],
       "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["webauthn.js"],
+      "resources": ["Nydia.js"],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
 }
