@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "Nydia: Passkey Holder",
+  "version": "0.1.0",
+  "description": "Browser extension for decentralized passkey storage on the Sia network.",
+  "author": "Oleh N.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*/*", 
+    "http://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dispatcher.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["core.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["injector.js"],
+      "matches": ["https://*/*", "http://*/*"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Nydia: Passkey Holder"
+  },
+  "icons": {
+    "128": "icon.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}
