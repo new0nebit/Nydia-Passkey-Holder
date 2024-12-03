@@ -1,6 +1,6 @@
 {
   "name": "Nydia: Passkey Holder",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Browser extension for decentralized passkey storage on the Sia network.",
   "author": "Oleh N.",
   "license": "MIT",
@@ -8,7 +8,6 @@
     "type": "git",
     "url": "https://github.com/new0nebit/Nydia-Passkey-Holder.git"
   },
-
   "keywords": [
     "passkey",
     "webauthn",
@@ -18,28 +17,29 @@
     "authenticator",
     "security"
   ],
-
   "scripts": {
-    "start": "webpack --watch --mode development",
-    "build": "rm -rf extension && webpack --mode production && cp -r assets/* extension/"
+    "build": "rm -rf extension && mkdir extension && cp -r assets/* extension/ && rm extension/manifest.* && cp assets/manifest.chrome.json extension/manifest.json && webpack --mode production",
+    "dev": "rm -rf extension && mkdir extension && cp -r assets/* extension/ && rm extension/manifest.* && cp assets/manifest.chrome.json extension/manifest.json && webpack --watch --mode development",
+    "lint": "eslint 'src/**/*.{js,ts}'",
+    "analyze": "webpack --mode production --env analyze"
   },
-
-  "dependencies": {
-    "base64url": "^3.0.1",
-    "cbor": "^9.0.2",
-    "buffer": "^6.0.3",
-    "process": "^0.11.10",
-    "stream-browserify": "^3.0.0",
-    "util": "^0.12.5"
-  },
-
   "devDependencies": {
-    "@types/node": "^22.5.4",
-    "typescript": "^5.5.4",
-    "ts-loader": "^9.4.3",
-    "webpack": "^5.94.0",
-    "webpack-cli": "^5.1.4",
+    "@eslint/js": "^9.15.0",
+    "@types/chrome": "^0.0.280",
+    "@typescript-eslint/eslint-plugin": "^8.15.0",
+    "@typescript-eslint/parser": "^8.15.0",
+    "css-loader": "^7.1.2",
+    "css-minimizer-webpack-plugin": "^7.0.0",
+    "eslint": "^9.16.0",
+    "globals": "^15.13.0",
+    "mini-css-extract-plugin": "^2.9.2",
+    "style-loader": "^4.0.0",
     "terser-webpack-plugin": "^5.3.10",
-    "vm-browserify": "^1.1.2"
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.16.0",
+    "webpack": "^5.96.1",
+    "webpack-bundle-analyzer": "^4.10.2",
+    "webpack-cli": "^5.1.4"
   }
 }
