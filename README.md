@@ -1,5 +1,8 @@
 <h1 align="center">
-  <img src=".docs/images/nydia-leaf.webp" height="44px" alt="Nydia Logo">
+  <picture>
+    <source srcset=".docs/images/nydia-leaf-dark.svg" media="(prefers-color-scheme: light)" height="44px" alt="Nydia Logo">
+    <img src=".docs/images/nydia-leaf-light.svg" height="44px" alt="Nydia Logo">
+  </picture>
 </h1>
 
 <div align="center">
