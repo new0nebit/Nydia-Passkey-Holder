@@ -34,8 +34,10 @@
 
       window.addEventListener('message', messageHandler);
 
-      // Exclude the signal property to prevent cloning errors
-      const { signal, ...optionsWithoutSignal } = options;
+      // Remove the signal property if it exists, as we handle cancellation through our own abort mechanism
+      const optionsWithoutSignal = { ...options };
+      delete optionsWithoutSignal.signal;
+
       const serializedOptions = serializePublicKeyCredentialOptions(optionsWithoutSignal);
 
       // Send a message to the content script
@@ -74,8 +76,10 @@
 
       window.addEventListener('message', messageHandler);
 
-      // Exclude the signal property to prevent cloning errors
-      const { signal, ...optionsWithoutSignal } = options;
+      // Remove the signal property if it exists, as we do not use it
+      const optionsWithoutSignal = { ...options };
+      delete optionsWithoutSignal.signal;
+
       const serializedOptions = serializePublicKeyCredentialOptions(optionsWithoutSignal);
 
       // Send a message to the content script
