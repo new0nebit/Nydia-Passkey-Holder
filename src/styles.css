@@ -14,7 +14,7 @@ body {
   background-image: url('data:image/svg+xml;charset=UTF-8,%3Csvg xmlns%3D%22http://www.w3.org/2000/svg%22 width%3D%224%22 height%3D%224%22%3E%3Ccircle cx%3D%222%22 cy%3D%222%22 r%3D%220.5%22 fill%3D%22%23d1d5db%22/%3E%3C/svg%3E');
   background-repeat: repeat;
   background-size: 4px 4px;
-  width: 390px;
+  width: 380px;
   max-height: 600px;
   margin: 0;
   padding: 12px;
@@ -40,7 +40,7 @@ body {
   margin-top: 1px;
   margin-bottom: 22px;
   padding-left: 1px;
-  color: #000000; /* Black color for light theme */
+  color: #000000;
 }
 
 /* ================================= */
@@ -122,6 +122,12 @@ h2 {
   color: rgb(37, 99, 235);
 }
 
+.alert-warning {
+  background-color: rgb(255, 247, 237);
+  border: 1px solid rgb(251, 146, 60);
+  color: rgb(234, 88, 12);
+}
+
 /* ================================= */
 /* Button Styles */
 /* ================================= */
@@ -131,6 +137,8 @@ h2 {
   justify-content: center;
   height: 28px;
   min-width: 80px;
+  max-width: 160px;
+  width: fit-content;
   padding: 6px 12px;
   border: none;
   border-radius: 6px;
@@ -138,7 +146,8 @@ h2 {
   color: white;
   cursor: pointer;
   transition: background-color 0.2s;
-  overflow: visible;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .button svg {
@@ -151,6 +160,15 @@ h2 {
 }
 
 /* Button Color Variants */
+.button-orange {
+  background-color: rgb(255, 165, 0); 
+  color: white; 
+}
+
+.button-orange:hover {
+  background-color: rgb(255, 140, 0);
+}
+
 .button-blue {
   background-color: rgb(59, 130, 246);
 }
@@ -173,6 +191,14 @@ h2 {
 
 .button-green:hover {
   background-color: rgb(22, 163, 74);
+}
+
+.button-sync {
+  background-color: rgb(22, 163, 74);
+}
+
+.button-sync:hover {
+  background-color: rgb(16, 123, 56);
 }
 
 .button-red {
@@ -226,8 +252,8 @@ h2 {
 /* Passkey Item Styles */
 /* ================================= */
 .passkey-item {
-  background-color: #ffffff; /* White background */
-  border: 1px solid #e5e7eb; /* Light gray border */
+  background-color: #ffffff; 
+  border: 1px solid #e5e7eb; 
   border-radius: 8px;
   padding: 12px;
   margin-bottom: 8px;
@@ -371,7 +397,7 @@ h2 {
   position: absolute;
   top: 0;
   right: 100%;
-  width: 170px;
+  width: 180px;
   background: white;
   border-radius: 8px;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
@@ -543,35 +569,38 @@ h2 {
     color: #ffffff;
   }
 
-  /* Logo Container */
   .logo-container {
-    color: #ffffff; /* White color for dark theme */
+    color: #ffffff;
   }
 
-  /* Alert Styles */
   .alert {
-    color: #f0f0f0;
+    color: #ffffff;  /* Белый цвет для всего текста в alert */
+  }
+
+  .alert .icon {
+    stroke: #ffffff;  /* Белый цвет для SVG иконок */
   }
 
   .alert-success {
     background-color: #2e7d32;
     border: 1px solid #66bb6a;
-    color: #a5d6a7;
   }
 
   .alert-error {
     background-color: #b71c1c;
     border: 1px solid #e57373;
-    color: #ef9a9a;
   }
 
   .alert-info {
     background-color: #1565c0;
     border: 1px solid #64b5f6;
-    color: #90caf9;
   }
 
-  /* Burger Button */
+  .alert-warning {
+    background-color: #653208;
+    border: 1px solid #fb923c;
+  }
+
   .burger-button {
     color: #b0b0b0;
   }
@@ -581,7 +610,6 @@ h2 {
     background-color: #3a3a3a;
   }
 
-  /* Burger Menu */
   .burger-menu {
     background: #2e2e2e;
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.7),
@@ -596,14 +624,12 @@ h2 {
     background-color: #3a3a3a;
   }
 
-  /* Passkey Item */
   .passkey-item {
     background-color: #383838;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
     border: 1px solid #4a4a4a;
   }
 
-  /* Text Colors */
   .site-info span,
   .user-info span {
     color: #ffffff;
@@ -613,7 +639,6 @@ h2 {
     color: #b0b0b0;
   }
 
-  /* Settings Form */
   #settings-form {
     background-color: #2e2e2e;
   }
@@ -633,7 +658,6 @@ h2 {
     box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.3);
   }
 
-  /* Modal Content */
   .modal-content {
     background: #2e2e2e;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.7),
@@ -648,7 +672,6 @@ h2 {
     color: #b0b0b0;
   }
 
-  /* Button Adjustments for Dark Theme */
   .button {
     color: #f0f0f0;
   }
@@ -671,21 +694,18 @@ h2 {
     background-color: #5a5a5a;
   }
 
-  /* Icon Adjustments */
   .button svg,
   .menu-item svg {
     stroke: #f0f0f0;
     fill: none;
   }
 
-  /* Upload Button State */
   .upload-button.uploading {
     background-color: #4a4a4a;
     color: #f0f0f0;
     cursor: default;
   }
 
-  /* Modal Buttons */
   .modal-confirm {
     background-color: #4a4a4a;
     color: #f0f0f0;
@@ -703,4 +723,31 @@ h2 {
   .modal-cancel:hover {
     background-color: #424242;
   }
+}
+
+/* ================================= */
+/* Custom Classes for Removed Inline Styles */
+/* ================================= */
+.centered-container {
+  text-align: center;
+  padding: 20px;
+}
+
+.small-title {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.small-subtitle {
+  margin-bottom: 16px;
+  font-size: 12px;
+}
+
+.flex-center {
+  display: flex;
+  justify-content: center;
+}
+
+.button-gap {
+  gap: 8px;
 }
