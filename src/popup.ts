@@ -8,7 +8,7 @@ export async function showPopup(
   onAction: (options: any, selectedCredentialId?: string) => Promise<any>,
   accounts?: Account[]
 ): Promise<any> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     logInfo('Creating and displaying the popup');
     const popup = document.createElement('div');
     popup.id = 'webauthn-popup';
@@ -19,12 +19,12 @@ export async function showPopup(
     const rpId = getRpIdFromOptions(options, operationType);
 
     const title = document.createElement('h3');
-    title.innerHTML = operationType === 'create' 
+    title.innerHTML = operationType === 'create'
       ? '<span class="app-name">Nydia</span> | Passkey Registration'
       : '<span class="app-name">Nydia</span> | Passkey Authentication';
     popup.appendChild(title);
 
-    // Block with site information
+    // Site information section
     const siteInfo = document.createElement('div');
     siteInfo.className = 'info-container';
 
@@ -43,7 +43,7 @@ export async function showPopup(
     popup.appendChild(siteInfo);
 
     if (operationType === 'create' && options.publicKey.user) {
-      // Block with user information
+      // User info section
       const userInfoBlock = document.createElement('div');
       userInfoBlock.className = 'info-container';
 
@@ -66,6 +66,13 @@ export async function showPopup(
     buttonContainer.className = 'button-container';
 
     if (operationType === 'get' && accounts && accounts.length > 0) {
+      // Sort accounts by creationTime so that the newest is at the top
+      accounts.sort((a, b) => {
+        const aTime = a.creationTime ?? 0;
+        const bTime = b.creationTime ?? 0;
+        return bTime - aTime;
+      });
+
       const accountList = document.createElement('ul');
       accountList.id = 'account-list';
 
