@@ -1,0 +1,86 @@
+name: Build and Release Extension
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches-ignore:
+      - '**'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    outputs:
+      CLEAN_TAG: ${{ steps.extract_version.outputs.CLEAN_TAG }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '23.5.0'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run build
+        run: npm run build
+
+      - name: Extract version
+        id: extract_version
+        run: |
+          echo "CLEAN_TAG=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Create extension archives (Ubuntu only)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mkdir nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}
+          mkdir nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}
+          cp -r extension/chrome/* nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}/
+          cp -r extension/firefox/* nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}/
+          zip -r nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}
+          zip -r nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}
+
+      - name: Upload artifacts (Ubuntu only)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: extensions
+          path: |
+            nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip
+            nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip
+          if-no-files-found: error
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: extensions
+          path: .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "${{ github.ref_name }}"
+          body: |
+            Changelog for ${{ github.ref_name }}:
+            - Add a description of the changes...
+          files: |
+            nydia-chrome-v${{ needs.build.outputs.CLEAN_TAG }}.zip
+            nydia-firefox-v${{ needs.build.outputs.CLEAN_TAG }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
