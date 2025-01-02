@@ -1,3 +1,4 @@
+import browser from 'webextension-polyfill';
 import { base64UrlEncode, base64UrlToArrayBuffer } from './base64url';
 import { WebAuthnOperationType, Account } from './types';
 import { showPopup } from './popup';
@@ -6,7 +7,7 @@ import { showPopup } from './popup';
  * Inject the injector.js script into the page to override WebAuthn methods.
  */
 const script = document.createElement('script');
-script.src = chrome.runtime.getURL('injector.js');
+script.src = browser.runtime.getURL('injector.js');
 (document.head || document.documentElement).appendChild(script);
 script.onload = () => {
   script.remove();
@@ -22,9 +23,8 @@ class WebAuthnInterceptor {
 
   /**
    * Determines whether to intercept the WebAuthn operation.
-   * @param type - The type of WebAuthn operation ('create' or 'get').
    */
-  async shouldIntercept(type: WebAuthnOperationType): Promise<boolean> {
+  async shouldIntercept(): Promise<boolean> {
     return this.interceptEnabled;
   }
 
@@ -165,6 +165,7 @@ class WebAuthnInterceptor {
 
   /**
    * Cleans the options object by converting necessary fields to ArrayBuffers.
+   * Also fixes the no-prototype-builtins error by using `Object.prototype.hasOwnProperty.call`.
    * @param options - The original options object.
    */
   private cleanOptions(
@@ -241,13 +242,17 @@ class WebAuthnInterceptor {
       }
     }
 
-    // Copy other properties
+    // Copy other properties using Object.prototype.hasOwnProperty
     for (const key in options) {
       if (
-        options.hasOwnProperty(key) &&
-        !['publicKey', 'challenge', 'allowCredentials', 'abortSignal', 'signal'].includes(
-          key
-        )
+        Object.prototype.hasOwnProperty.call(options, key) &&
+        ![
+          'publicKey',
+          'challenge',
+          'allowCredentials',
+          'abortSignal',
+          'signal',
+        ].includes(key)
       ) {
         cleanedOptions[key] = options[key];
       }
@@ -330,8 +335,8 @@ class WebAuthnInterceptor {
       // Serialize options
       const serializedOptions = this.serializeOptions(options);
 
-      // Send message to background script
-      const response = await this.sendMessageToBackground({
+      // Send message to background script using browser.runtime.sendMessage
+      const response = await browser.runtime.sendMessage({
         type: 'createCredential',
         options: serializedOptions,
       });
@@ -363,8 +368,8 @@ class WebAuthnInterceptor {
       // Serialize options
       const serializedOptions = this.serializeOptions(options);
 
-      // Send message to background script
-      const response = await this.sendMessageToBackground({
+      // Send message to background script using browser.runtime.sendMessage
+      const response = await browser.runtime.sendMessage({
         type: 'handleGetAssertion',
         options: serializedOptions,
         selectedCredentialId,
@@ -380,40 +385,13 @@ class WebAuthnInterceptor {
   }
 
   /**
-   * Sends a message to the background script.
-   * @param message - The message object to send.
-   */
-  private sendMessageToBackground(message: any): Promise<any> {
-    return new Promise((resolve, reject) => {
-      try {
-        const serializableMessage = JSON.parse(JSON.stringify(message));
-
-        chrome.runtime.sendMessage(serializableMessage, (response) => {
-          if (chrome.runtime.lastError) {
-            this.logDebug(
-              'Error sending message to background',
-              chrome.runtime.lastError
-            );
-            reject(chrome.runtime.lastError);
-          } else {
-            resolve(response);
-          }
-        });
-      } catch (error) {
-        this.logDebug('Error preparing message for background script', error);
-        reject(error);
-      }
-    });
-  }
-
-  /**
    * Retrieves available credentials for the given RP ID.
    * @param rpId - The relying party ID.
    */
   private async getAvailableCredentials(rpId: string): Promise<Account[]> {
     try {
       this.logDebug('Getting available credentials for rpId', rpId);
-      const response = await this.sendMessageToBackground({
+      const response = await browser.runtime.sendMessage({
         type: 'getAvailableCredentials',
         rpId,
       });
@@ -500,7 +478,6 @@ class WebAuthnInterceptor {
         );
       }
 
-      // Construct the Credential object
       const credential: PublicKeyCredential = {
         type: parsedResponse.type,
         id: parsedResponse.id,
@@ -524,7 +501,6 @@ class WebAuthnInterceptor {
           : null,
       };
 
-      // Construct the Credential object
       const credential: PublicKeyCredential = {
         type: parsedResponse.type,
         id: parsedResponse.id,
@@ -569,8 +545,9 @@ window.addEventListener('message', async (event) => {
   if (message && message.type === 'webauthn-create') {
     // Handle navigator.credentials.create()
     try {
+      // Removed the 'type' parameter from shouldIntercept call
       if (
-        (await interceptor.shouldIntercept('create')) &&
+        (await interceptor.shouldIntercept()) &&
         message.options &&
         typeof message.options === 'object'
       ) {
@@ -579,7 +556,6 @@ window.addEventListener('message', async (event) => {
           // Fallback to original method
           window.postMessage({ type: 'webauthn-create-fallback' }, '*');
         } else {
-          // Prepare and send response to injector.js
           const response = {
             type: credential.type,
             id: credential.id,
@@ -593,7 +569,6 @@ window.addEventListener('message', async (event) => {
                 (credential.response as AuthenticatorAttestationResponse)
                   .attestationObject
               ),
-              // Include optional fields if present
               ...(credential.response as any).authenticatorData && {
                 authenticatorData: base64UrlEncode(
                   (credential.response as any).authenticatorData
@@ -634,8 +609,9 @@ window.addEventListener('message', async (event) => {
   } else if (message && message.type === 'webauthn-get') {
     // Handle navigator.credentials.get()
     try {
+      // Removed the 'type' parameter from shouldIntercept call
       if (
-        (await interceptor.shouldIntercept('get')) &&
+        (await interceptor.shouldIntercept()) &&
         message.options &&
         typeof message.options === 'object'
       ) {
@@ -644,7 +620,6 @@ window.addEventListener('message', async (event) => {
           // Fallback to original method
           window.postMessage({ type: 'webauthn-get-fallback' }, '*');
         } else {
-          // Prepare and send response to injector.js
           const response = {
             type: credential.type,
             id: credential.id,
