@@ -1,6 +1,6 @@
 {
   "name": "Nydia: Passkey Holder",
-  "version": "0.1.0",
+  "version": "1.0.0-alpha.1",
   "description": "Browser extension for decentralized passkey storage on the Sia network.",
   "author": "Oleh N.",
   "license": "MIT",
@@ -18,16 +18,20 @@
     "security"
   ],
   "scripts": {
-    "build": "rm -rf extension && mkdir extension && cp -r assets/* extension/ && rm extension/manifest.* && cp assets/manifest.chrome.json extension/manifest.json && webpack --mode production",
-    "dev": "rm -rf extension && mkdir extension && cp -r assets/* extension/ && rm extension/manifest.* && cp assets/manifest.chrome.json extension/manifest.json && webpack --watch --mode development",
+    "build": "npm run build:chrome && npm run build:firefox",
+    "build:chrome": "webpack --mode production --env target=chrome",
+    "build:firefox": "webpack --mode production --env target=firefox",
+    "dev": "webpack --watch --mode development --env target=chrome",
     "lint": "eslint 'src/**/*.{js,ts}'",
     "analyze": "webpack --mode production --env analyze"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",
     "@types/chrome": "^0.0.280",
+    "@types/webextension-polyfill": "^0.12.1",
     "@typescript-eslint/eslint-plugin": "^8.15.0",
     "@typescript-eslint/parser": "^8.15.0",
+    "copy-webpack-plugin": "^11.0.0",
     "css-loader": "^7.1.2",
     "css-minimizer-webpack-plugin": "^7.0.0",
     "eslint": "^9.16.0",
@@ -41,5 +45,8 @@
     "webpack": "^5.96.1",
     "webpack-bundle-analyzer": "^4.10.2",
     "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "webextension-polyfill": "^0.12.0"
   }
 }
