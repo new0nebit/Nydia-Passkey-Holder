@@ -1,10 +1,6 @@
+import browser from 'webextension-polyfill';
 import { StoredCredential, RenterdSettings } from './types';
-import {
-  getAllStoredCredentialsFromDB,
-  saveStoredCredential,
-  getSettings,
-  saveSettings,
-} from './store';
+import { getAllStoredCredentialsFromDB, getSettings, saveSettings } from './store';
 import { icons } from './icons';
 
 // Types for notifications
@@ -13,12 +9,12 @@ type ModalType = 'alert' | 'confirm' | 'prompt';
 
 class Menu {
   constructor() {
-    document.addEventListener('DOMContentLoaded', () => {
-      this.displayPasskeys();
+    document.addEventListener('DOMContentLoaded', async () => {
+      await this.displayPasskeys();
     });
   }
 
-  // Methods for notifications and modal windows
+  // Notification and modal methods
   private showNotification(
     type: NotificationType,
     title: string,
@@ -27,7 +23,6 @@ class Menu {
     const notification = document.createElement('div');
     notification.className = `alert alert-${type}`;
 
-    // Select the appropriate icon
     const iconSvg =
       type === 'success'
         ? icons.check
@@ -47,18 +42,16 @@ class Menu {
       </div>
     `;
 
-    // Add notification to the top of the root element
     const root = document.getElementById('root');
     if (root) {
       root.insertBefore(notification, root.firstChild);
     }
 
-    // Remove notification after 20 seconds
     setTimeout(() => {
       if (notification.parentNode) {
         notification.parentNode.removeChild(notification);
       }
-    }, 20000);
+    }, 3000);
   }
 
   private showModal(
@@ -103,7 +96,6 @@ class Menu {
 
       document.body.appendChild(overlay);
 
-      // Button event handlers
       const confirmBtn = overlay.querySelector('.modal-confirm');
       const cancelBtn = overlay.querySelector('.modal-cancel');
 
@@ -127,10 +119,20 @@ class Menu {
     });
   }
 
-  // Displaying Passkeys
+  // Display passkeys
   async displayPasskeys() {
     try {
       const storedCredentials = await getAllStoredCredentialsFromDB();
+      
+      // Sort by creation date (new on top):
+      storedCredentials.sort((a, b) => {
+        const aTime = a.creationTime ?? 0;
+        const bTime = b.creationTime ?? 0;
+        // Make the most recent ones at the beginning: bTime - aTime
+        return bTime - aTime;
+      });
+
+      const settings = await getSettings();
       const passkeyList = document.getElementById('passkey-list');
 
       if (passkeyList) {
@@ -140,17 +142,66 @@ class Menu {
         }
 
         if (!document.querySelector('.header-container')) {
-          this.createImportAndSettingsButtons(passkeyList);
+          this.createSettingsButton(passkeyList);
         }
 
         passkeyList.innerHTML = '';
+
         if (storedCredentials.length > 0) {
           storedCredentials.forEach((passkey) => {
             const listItem = this.createPasskeyListItem(passkey);
             passkeyList.appendChild(listItem);
           });
+        } else if (settings) {
+          const container = document.createElement('div');
+          container.classList.add('centered-container');
+
+          const title = document.createElement('div');
+          title.classList.add('small-title');
+          title.textContent = 'Ready to Sync Passkeys';
+
+          const subtitle = document.createElement('div');
+          subtitle.classList.add('small-subtitle');
+          subtitle.textContent = 'Connect to renterd server and retrieve passkeys';
+
+          const buttonWrapper = document.createElement('div');
+          buttonWrapper.classList.add('flex-center');
+
+          const button = document.createElement('button');
+          button.className = 'button button-sync button-gap';
+          button.innerHTML = `${icons.sia}<span>Sync Passkeys</span>`;
+          button.onclick = () => this.syncPasskeys(button);
+
+          buttonWrapper.appendChild(button);
+          container.appendChild(title);
+          container.appendChild(subtitle);
+          container.appendChild(buttonWrapper);
+          passkeyList.appendChild(container);
         } else {
-          passkeyList.innerHTML = '<li>No Passkeys Found</li>';
+          const container = document.createElement('div');
+          container.classList.add('centered-container');
+
+          const title = document.createElement('div');
+          title.classList.add('small-title');
+          title.textContent = 'No Passkeys Found';
+
+          const subtitle = document.createElement('div');
+          subtitle.classList.add('small-subtitle');
+          subtitle.textContent = 'Configure renterd settings to start syncing';
+
+          const buttonWrapper = document.createElement('div');
+          buttonWrapper.classList.add('flex-center');
+
+          const button = document.createElement('button');
+          button.className = 'button button-green button-gap';
+          button.innerHTML = `${icons.settings}<span>Renterd Settings</span>`;
+          button.onclick = () => this.showSettingsForm();
+
+          buttonWrapper.appendChild(button);
+          container.appendChild(title);
+          container.appendChild(subtitle);
+          container.appendChild(buttonWrapper);
+          passkeyList.appendChild(container);
         }
       }
     } catch (error) {
@@ -159,84 +210,54 @@ class Menu {
     }
   }
 
-  // Creating import and settings buttons
-  private createImportAndSettingsButtons(passkeyList: HTMLElement) {
-    // Create a container with proper positioning
+  // Settings button
+  private createSettingsButton(passkeyList: HTMLElement) {
     const headerContainer = document.createElement('div');
     headerContainer.className = 'header-container';
 
-    // Add container for logo
     const logoContainer = document.createElement('div');
     logoContainer.className = 'logo-container';
     logoContainer.innerHTML = icons.logo;
     headerContainer.appendChild(logoContainer);
 
-    // Container for burger menu
     const menuContainer = document.createElement('div');
     menuContainer.className = 'menu-container';
 
     const burgerButton = document.createElement('button');
     burgerButton.className = 'burger-button';
 
-    // Create container for dropdown menu
     const burgerMenu = document.createElement('div');
     burgerMenu.className = 'burger-menu hidden';
 
-    // Create menu items
-    const importMenuItem = document.createElement('button');
-    importMenuItem.innerHTML = `${icons.import}<span>Import Passkey</span>`;
-    importMenuItem.className = 'menu-item';
+    const syncMenuItem = document.createElement('button');
+    syncMenuItem.innerHTML = `${icons.sia}<span>Sync Passkeys</span>`;
+    syncMenuItem.className = 'menu-item';
+    syncMenuItem.onclick = async (e) => {
+      e.stopPropagation();
+      syncMenuItem.disabled = true;
+      await this.syncPasskeys(syncMenuItem);
+      syncMenuItem.disabled = false;
+      burgerMenu.classList.add('hidden');
+      burgerButton.classList.remove('active');
+    };
+    burgerMenu.appendChild(syncMenuItem);
 
     const settingsMenuItem = document.createElement('button');
     settingsMenuItem.innerHTML = `${icons.settings}<span>Renterd Settings</span>`;
     settingsMenuItem.className = 'menu-item';
-
-    burgerMenu.appendChild(importMenuItem);
+    settingsMenuItem.onclick = () => {
+      this.showSettingsForm();
+      burgerMenu.classList.add('hidden');
+      burgerButton.classList.remove('active');
+    };
     burgerMenu.appendChild(settingsMenuItem);
 
-    // Create hidden input for files
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.accept = '.json';
-    fileInput.multiple = true; // Allow multiple file selection
-    fileInput.style.display = 'none';
-
-    // Event handlers
     burgerButton.onclick = (e) => {
       e.stopPropagation();
       burgerButton.classList.toggle('active');
       burgerMenu.classList.toggle('hidden');
     };
 
-    importMenuItem.onclick = () => {
-      fileInput.click();
-      burgerMenu.classList.add('hidden');
-      burgerButton.classList.remove('active');
-    };
-
-    settingsMenuItem.onclick = () => {
-      this.showSettingsForm();
-      burgerMenu.classList.add('hidden');
-      burgerButton.classList.remove('active');
-    };
-
-    fileInput.onchange = (e: Event) => {
-      const files = (e.target as HTMLInputElement).files;
-      if (files && files.length > 0) {
-        this.importPasskeys(files);
-      }
-    };
-
-    // Add burger icon
-    burgerButton.innerHTML = icons.burger;
-
-    menuContainer.appendChild(burgerButton);
-    menuContainer.appendChild(burgerMenu);
-    menuContainer.appendChild(fileInput);
-
-    headerContainer.appendChild(menuContainer);
-
-    // Add event listener to close the menu when clicked outside
     document.addEventListener('click', (e) => {
       if (
         !menuContainer.contains(e.target as Node) &&
@@ -247,10 +268,17 @@ class Menu {
       }
     });
 
+    burgerButton.innerHTML = icons.burger;
+
+    menuContainer.appendChild(burgerButton);
+    menuContainer.appendChild(burgerMenu);
+
+    headerContainer.appendChild(menuContainer);
+
     passkeyList.parentElement?.insertBefore(headerContainer, passkeyList);
   }
 
-  // Create passkey list item element
+  // Create passkey list item
   private createPasskeyListItem(passkey: StoredCredential): HTMLLIElement {
     const listItem = document.createElement('li');
     listItem.className = 'passkey-item';
@@ -267,7 +295,7 @@ class Menu {
     return listItem;
   }
 
-  // Create site info element
+  // Site info
   private createSiteInfo(passkey: StoredCredential): HTMLElement {
     const siteInfo = document.createElement('div');
     siteInfo.className = 'site-info';
@@ -286,7 +314,7 @@ class Menu {
     return siteInfo;
   }
 
-  // Create user info element
+  // User info
   private createUserInfo(passkey: StoredCredential): HTMLElement {
     const userInfo = document.createElement('div');
     userInfo.className = 'user-info';
@@ -305,23 +333,14 @@ class Menu {
     actionContainer.className = 'action-container';
 
     const uploadButton = document.createElement('button');
-
-    // Make the upload button clickable even if passkey.isSynced is true
-    const uploadButtonText = passkey.isSynced ? 'Synced' : 'Upload to Sia';
+    const uploadButtonText = passkey.isSynced ? 'Synced' : 'Backup to Sia';
     const uploadButtonIcon = passkey.isSynced ? icons.check : icons.sia;
     uploadButton.innerHTML = `${uploadButtonIcon}<span>${uploadButtonText}</span>`;
-    uploadButton.className = 'button button-green upload-button';
-
+    uploadButton.className = passkey.isSynced ? 'button button-sync upload-button' : 'button button-green upload-button';
     uploadButton.onclick = () => {
       this.uploadPasskey(passkey, uploadButton);
     };
-
-    const exportButton = document.createElement('button');
-    exportButton.innerHTML = `${icons.export}<span>Export</span>`;
-    exportButton.className = 'button button-indigo';
-    exportButton.onclick = () => {
-      this.exportPasskey(passkey);
-    };
+    actionContainer.appendChild(uploadButton);
 
     const deleteButton = document.createElement('button');
     deleteButton.innerHTML = `${icons.delete}<span>Delete</span>`;
@@ -329,94 +348,12 @@ class Menu {
     deleteButton.onclick = () => {
       this.deletePasskey(passkey.uniqueId);
     };
-
-    actionContainer.appendChild(uploadButton);
-    actionContainer.appendChild(exportButton);
     actionContainer.appendChild(deleteButton);
 
     return actionContainer;
   }
 
-  // Export Passkey
-  private exportPasskey(passkey: StoredCredential) {
-    const passkeyDataJson = JSON.stringify(passkey, null, 2);
-    const blob = new Blob([passkeyDataJson], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${passkey.uniqueId}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }
-
-  // Import Passkeys
-  private async importPasskeys(files: FileList | File[]): Promise<void> {
-    const successfulImports: string[] = [];
-    const failedImports: string[] = [];
-
-    for (const file of Array.from(files)) {
-      try {
-        const content = await file.text();
-        const passkey = JSON.parse(content) as StoredCredential;
-
-        // Check validity of passkey
-        const requiredFields = [
-          'uniqueId',
-          'credentialId',
-          'rpId',
-          'userIdHash',
-          'privateKey',
-          'userHandle',
-          'publicKey',
-          'publicKeyAlgorithm',
-          'counter',
-        ];
-
-        const missingFields = requiredFields.filter(
-          (field) => !(field in passkey)
-        );
-
-        if (missingFields.length > 0) {
-          throw new Error('Invalid passkey file format');
-        }
-
-        // Set isSynced to false when importing
-        passkey.isSynced = false;
-
-        await saveStoredCredential(passkey);
-        successfulImports.push(file.name);
-      } catch (error) {
-        console.error(`Error importing passkey from file ${file.name}:`, error);
-        failedImports.push(file.name);
-      }
-    }
-
-    // Display notifications based on results
-    if (successfulImports.length > 0) {
-      this.showNotification(
-        'success',
-        'Success!',
-        `Successfully imported ${successfulImports.length} passkey(s).`
-      );
-    }
-
-    if (failedImports.length > 0) {
-      this.showNotification(
-        'error',
-        'Error!',
-        `Failed to import ${failedImports.length} passkey(s): ${failedImports.join(
-          ', '
-        )}.`
-      );
-    }
-
-    // Refresh passkey list
-    this.displayPasskeys();
-  }
-
-  // Delete Passkey
+  // Delete passkey
   async deletePasskey(uniqueId: string) {
     const confirmed = await this.showModal(
       'confirm',
@@ -432,12 +369,12 @@ class Menu {
         const request = store.delete(uniqueId);
 
         request.onsuccess = () => {
+          this.displayPasskeys();
           this.showNotification(
             'success',
             'Success!',
             'Passkey deleted successfully.'
           );
-          this.displayPasskeys();
         };
 
         request.onerror = () => {
@@ -451,53 +388,208 @@ class Menu {
     }
   }
 
-  // Upload Passkey
+  // Orchestrate sync passkeys
+  private async syncPasskeys(button: HTMLButtonElement | Element) {
+    if (button instanceof HTMLButtonElement) {
+      const buttonText = button.querySelector('span');
+      if (buttonText) {
+        buttonText.textContent = 'Syncing...';
+      }
+      button.disabled = true;
+    }
+
+    // Check settings first
+    const settings = await getSettings();
+    if (!settings || !this.validateSettings(settings)) {
+      this.showNotification(
+        'error',
+        'Error!',
+        'Cannot sync passkeys, no renterd server settings found.'
+      );
+      if (button instanceof HTMLButtonElement) {
+        this.resetSyncButton(button);
+      }
+      return;
+    }
+
+    try {
+      const uploadResult = await this.uploadUnsyncedPasskeys();
+      const downloadResult = await this.downloadNewPasskeys();
+
+      let notificationType: NotificationType | null = null;
+      let notificationTitle = '';
+      let notificationMessage = '';
+
+      // If an error occurred during upload or download
+      if (uploadResult.error || downloadResult.error) {
+        notificationType = 'error';
+        notificationTitle = 'Error!';
+        notificationMessage = 'Error syncing Passkeys with renterd server. Please try again later.';
+      } else if (uploadResult.failedCount > 0 || downloadResult.failedCount > 0) {
+        // Partial failures
+        notificationType = 'warning';
+        notificationTitle = 'Warning';
+        notificationMessage = 'Some Passkeys failed to synchronize. Check your settings and try again.';
+      } else if (downloadResult.empty) {
+        // No passkeys found on server
+        notificationType = 'info';
+        notificationTitle = 'Info';
+        notificationMessage = 'No Passkeys found on renterd server.';
+      } else {
+        // Everything succeeded
+        notificationType = 'success';
+        notificationTitle = 'Success!';
+        notificationMessage = `Successfully synchronized ${downloadResult.syncedCount} passkey(s).`;
+      }
+
+      if (notificationType) {
+        this.showNotification(notificationType, notificationTitle, notificationMessage);
+      }
+
+      await this.displayPasskeys();
+    } catch (error) {
+      console.error('Error during sync:', error);
+      this.showNotification(
+        'error',
+        'Error!',
+        'Error syncing Passkeys with renterd server. Please try again later.'
+      );
+    } finally {
+      if (button instanceof HTMLButtonElement) {
+        this.resetSyncButton(button);
+      }
+    }
+  }
+
+  private resetSyncButton(button: HTMLButtonElement) {
+    const text = 'Sync Passkeys';
+    const icon = icons.sia;
+    button.innerHTML = `${icon}<span>${text}</span>`;
+    button.disabled = false;
+  }
+
+  // Upload only unsynced passkeys
+  private async uploadUnsyncedPasskeys(): Promise<{uploadedCount: number; failedCount: number; error: boolean}> {
+    const storedCredentials = await getAllStoredCredentialsFromDB();
+    const unsynced = storedCredentials.filter((p) => !p.isSynced);
+
+    if (unsynced.length === 0) {
+      return { uploadedCount: 0, failedCount: 0, error: false };
+    }
+
+    try {
+      const response = await browser.runtime.sendMessage({
+        type: 'uploadUnsyncedPasskeys',
+        passkeys: unsynced,
+      });
+
+      if (response && response.success) {
+        return {
+          uploadedCount: response.uploadedCount || 0,
+          failedCount: response.failedCount || 0,
+          error: false
+        };
+      } else {
+        return {
+          uploadedCount: 0,
+          failedCount: unsynced.length,
+          error: true
+        };
+      }
+    } catch (error) {
+      console.error('Error backing up unsynced passkeys:', error);
+      return {
+        uploadedCount: 0,
+        failedCount: unsynced.length,
+        error: true
+      };
+    }
+  }
+
+  // Download new passkeys from renterd
+  private async downloadNewPasskeys(): Promise<{syncedCount: number; failedCount: number; empty: boolean; error: boolean}> {
+    try {
+      const response = await browser.runtime.sendMessage({
+        type: 'syncFromSia'
+      });
+
+      if (response && response.success) {
+        return {
+          syncedCount: response.syncedCount || 0,
+          failedCount: response.failedCount || 0,
+          empty: (response.syncedCount === 0 && response.failedCount === 0),
+          error: false
+        };
+      } else {
+        return {
+          syncedCount: 0,
+          failedCount: 0,
+          empty: true,
+          error: true
+        };
+      }
+    } catch (error) {
+      console.error('Error downloading passkeys:', error);
+      return {
+        syncedCount: 0,
+        failedCount: 0,
+        empty: true,
+        error: true
+      };
+    }
+  }
+
+  // Backup Passkey
   async uploadPasskey(
     passkey: StoredCredential,
     uploadButton: HTMLButtonElement
   ) {
     const uploadButtonText = uploadButton.querySelector('span');
     if (uploadButtonText) {
-      uploadButtonText.textContent = 'Uploading...'; // Change only the text inside span
+      uploadButtonText.textContent = 'Backing up...';
     }
     uploadButton.classList.add('uploading');
     uploadButton.disabled = true;
 
-    // Send message to background script to perform the upload
-    chrome.runtime.sendMessage(
-      {
+    try {
+      const response = await browser.runtime.sendMessage({
         type: 'uploadToSia',
         passkeyData: passkey,
-      },
-      (response) => {
-        if (response && response.success) {
-          this.showNotification('success', 'Success!', response.message);
+      });
 
-          // Update the uploadButton to show 'Synced' with the checkmark
-          uploadButton.innerHTML = `${icons.check}<span>Synced</span>`;
-          uploadButton.classList.remove('uploading');
-          uploadButton.disabled = false; // Enable the button for potential re-upload
-          passkey.isSynced = true; // Update local passkey state
-        } else {
-          const errorMessage =
-            response && response.error
-              ? response.error
-              : 'An error occurred.';
-          console.error('Error uploading passkey:', errorMessage);
-          this.showNotification('error', 'Error!', errorMessage);
+      if (response && response.success) {
+        this.showNotification('success', 'Success!', response.message);
 
-          // Update the button text back to 'Upload to Sia' or 'Synced' based on isSynced
-          const uploadButtonText = passkey.isSynced ? 'Synced' : 'Upload to Sia';
-          const uploadButtonIcon = passkey.isSynced ? icons.check : icons.sia;
-          uploadButton.innerHTML = `${uploadButtonIcon}<span>${uploadButtonText}</span>`;
-          uploadButton.classList.remove('uploading');
-          uploadButton.disabled = false; // Enable the button for retry
-        }
+        uploadButton.classList.remove('button-green');
+        uploadButton.classList.add('button-sync');
+        uploadButton.innerHTML = `${icons.check}<span>Synced</span>`;
+        uploadButton.classList.remove('uploading');
+        uploadButton.disabled = false;
+        passkey.isSynced = true;
+      } else {
+        const errorMessage = response && response.error ? response.error : 'An error occurred.';
+        console.error('Error backing up passkey:', errorMessage);
+        this.showNotification('error', 'Error!', errorMessage);
+
+        const text = passkey.isSynced ? 'Synced' : 'Backup to Sia';
+        const icon = passkey.isSynced ? icons.check : icons.sia;
+        uploadButton.innerHTML = `${icon}<span>${text}</span>`;
+        uploadButton.classList.remove('uploading');
+        uploadButton.disabled = false;
       }
-    );
+    } catch (error) {
+      console.error('Error backing up passkey:', error);
+      this.showNotification('error', 'Error!', `An error occurred: ${error}`);
+
+      const text = passkey.isSynced ? 'Synced' : 'Backup to Sia';
+      const icon = passkey.isSynced ? icons.check : icons.sia;
+      uploadButton.innerHTML = `${icon}<span>${text}</span>`;
+      uploadButton.classList.remove('uploading');
+      uploadButton.disabled = false;
+    }
   }
 
-  // Display settings form
+  // Show settings form
   async showSettingsForm() {
     const passkeyList = document.getElementById('passkey-list');
     if (passkeyList) {
@@ -531,12 +623,8 @@ class Menu {
         input.type = field.type;
         input.required = true;
 
-        // Add input restrictions for serverPort
         if (field.name === 'serverPort') {
           input.maxLength = 5;
-          input.placeholder = '1 - 65535';
-
-          // Add event listener to restrict input to digits only
           input.addEventListener('input', (e) => {
             const target = e.target as HTMLInputElement;
             target.value = target.value.replace(/[^\d]/g, '');
@@ -586,13 +674,16 @@ class Menu {
 
       form.appendChild(buttonContainer);
 
-      form.onsubmit = async (event) => {
-        event.preventDefault();
+      form.onsubmit = async (evt) => {
+        evt.preventDefault();
         await this.saveSettingsFromForm(form);
         this.displayPasskeys();
       };
 
-      passkeyList.appendChild(form);
+      const passkeyListRef = document.getElementById('passkey-list');
+      if (passkeyListRef) {
+        passkeyListRef.appendChild(form);
+      }
     }
   }
 
@@ -700,7 +791,7 @@ class Menu {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open('NydiaDB', 3);
 
-      request.onupgradeneeded = (event) => {
+      request.onupgradeneeded = () => {
         const db = request.result;
         const transaction =
           request.transaction ||
@@ -716,7 +807,6 @@ class Menu {
           objectStore = transaction.objectStore('storedCredentials');
         }
 
-        // Create indexes if they don't exist
         if (!objectStore.indexNames.contains('credentialId')) {
           objectStore.createIndex('credentialId', 'credentialId', {
             unique: true,
@@ -726,7 +816,6 @@ class Menu {
           objectStore.createIndex('rpId', 'rpId', { unique: false });
         }
 
-        // Handle settings store
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings', { keyPath: 'id' });
         }
@@ -743,5 +832,4 @@ class Menu {
   }
 }
 
-// Initialize menu
 new Menu();

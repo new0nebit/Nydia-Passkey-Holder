@@ -1,6 +1,10 @@
+import browser from 'webextension-polyfill';
 import { SigningAlgorithm, ES256, RS256 } from './algorithms';
 import { StoredCredential, RenterdSettings } from './types';
 import { logInfo, logError } from './logger';
+import { uploadPasskeyDirect } from './sia';
+import { base64UrlEncode, base64UrlDecode } from './base64url';
+
 
 // Web Crypto API
 const crypto = self.crypto;
@@ -11,49 +15,53 @@ const subtle = crypto.subtle;
 =============================================== */
 
 /**
- * Checks if the current context is the background script.
+ * Determines if the current execution context is a background script.
+ *
+ * This function checks:
+ * - Chrome: If the context is a Service Worker (`ServiceWorkerGlobalScope`).
+ * - Firefox: If the context is a background page (`browser.runtime.getBackgroundPage`).
+ *
+ * @returns {boolean} `true` if the current context is a background script, otherwise `false`.
  */
 function isBackgroundContext(): boolean {
-  return (
-    typeof chrome !== 'undefined' &&
-    !!chrome.runtime &&
-    !!chrome.runtime.id &&
-    typeof window === 'undefined'
-  );
+  try {
+    // Check for Chrome Service Worker context
+    if (typeof ServiceWorkerGlobalScope !== 'undefined' && self instanceof ServiceWorkerGlobalScope) {
+      console.log('Chrome Service Worker detected');
+      return true;
+    }
+
+    // Check for Firefox background context
+    if (typeof browser !== 'undefined' && typeof browser.runtime.getBackgroundPage === 'function') {
+      console.log('Firefox Background detected');
+      return true;
+    }
+
+    // Not a background context
+    console.log('Not a background context');
+    return false;
+  } catch (error) {
+    console.error('Error in isBackgroundContext:', error);
+    return false;
+  }
 }
 
 /**
  * Sends a message to the background script or handles it directly if in the background context.
  */
-function sendMessageToExtension(message: any): Promise<any> {
-  return new Promise(async (resolve, reject) => {
+async function sendMessageToExtension(message: any): Promise<any> {
+  try {
     if (isBackgroundContext()) {
-      // Handle message directly in the background script
-      try {
-        const response = await handleMessageInBackground(message);
-        resolve(response);
-      } catch (error) {
-        logError('Error handling message in background script', error);
-        reject(error);
-      }
-    } else if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
-      // Send message to the background script
-      chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) {
-          logError('Error sending message to extension', {
-            message: chrome.runtime.lastError.message,
-            error: chrome.runtime.lastError,
-          });
-          reject(chrome.runtime.lastError);
-        } else {
-          resolve(response);
-        }
-      });
+      // If we're in background context, handle the message directly
+      return await handleMessageInBackground(message);
     } else {
-      logError('chrome.runtime is not available');
-      reject(new Error('chrome.runtime is not available'));
+      // Otherwise send a message via browser API (webextension-polyfill)
+      return await browser.runtime.sendMessage(message);
     }
-  });
+  } catch (error) {
+    logError('Error in sendMessageToExtension:', error);
+    throw error;
+  }
 }
 
 /* ================================================
@@ -174,6 +182,10 @@ export async function getSettings(): Promise<RenterdSettings | null> {
  * Saves a StoredCredential to the IndexedDB.
  */
 export async function saveStoredCredential(storedCredential: StoredCredential): Promise<void> {
+  if (!storedCredential.creationTime) {
+    storedCredential.creationTime = Date.now();
+  }
+
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readwrite');
@@ -195,7 +207,7 @@ export async function saveStoredCredential(storedCredential: StoredCredential): 
 /**
  * Retrieves a StoredCredential by credentialId.
  */
-export async function getStoredCredentialByCredentialId(credentialId: string): Promise<StoredCredential | undefined> {
+async function getStoredCredentialByCredentialId(credentialId: string): Promise<StoredCredential | undefined> {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readonly');
@@ -238,7 +250,7 @@ export async function getAllStoredCredentialsFromDB(): Promise<StoredCredential[
 /**
  * Finds a StoredCredential based on options and an optional selectedCredentialId.
  */
-export async function findStoredCredential(
+async function findStoredCredential(
   options: any,
   selectedCredentialId?: string
 ): Promise<StoredCredential | undefined> {
@@ -323,11 +335,17 @@ export async function updateCredentialCounter(credentialId: string): Promise<voi
     const store = transaction.objectStore(STORE_NAME);
     const request = store.put(storedCredential);
 
-    request.onsuccess = () => {
+    request.onsuccess = async () => {
       logInfo('Credential counter updated:', {
         credentialId,
         newCounter: storedCredential.counter,
       });
+
+      const result = await uploadPasskeyDirect(storedCredential);
+      if (!result.success) {
+        logError('Failed to sync updated passkey to renterd:', result.error);
+      }
+
       resolve();
     };
 
@@ -338,6 +356,7 @@ export async function updateCredentialCounter(credentialId: string): Promise<voi
   });
 }
 
+
 /* ================================================
    Messaging in Background Context
 ================================================ */
@@ -347,26 +366,31 @@ export async function updateCredentialCounter(credentialId: string): Promise<voi
  */
 export async function handleMessageInBackground(message: any): Promise<any> {
   switch (message.type) {
-    case 'saveStoredCredential':
+    case 'saveStoredCredential': {
       await saveStoredCredential(message.storedCredential);
       return { status: 'success' };
-    case 'getStoredCredential':
+    }
+    case 'getStoredCredential': {
       const storedCredential = await getStoredCredentialByCredentialId(
         message.credentialId
       );
       return storedCredential || { error: 'Credential not found' };
-    case 'findCredential':
+    }
+    case 'findCredential': {
       const foundCredential = await findStoredCredential(
         message.options,
         message.selectedCredentialId
       );
       return foundCredential || { error: 'Credential not found' };
-    case 'updateCredentialCounter':
+    }
+    case 'updateCredentialCounter': {
       await updateCredentialCounter(message.credentialId);
       return { status: 'success' };
-    case 'getAllStoredCredentials':
+    }
+    case 'getAllStoredCredentials': {
       const storedCredentials = await getAllStoredCredentialsFromDB();
       return storedCredentials;
+    }
     default:
       throw new Error('Unknown message type');
   }
@@ -376,7 +400,7 @@ export async function handleMessageInBackground(message: any): Promise<any> {
    MemoryStore Class
 ================================================ */
 
-export class MemoryStore {
+class MemoryStore {
   private static instance: MemoryStore | null = null;
   private store: Map<string, any>;
 
@@ -423,46 +447,6 @@ export function getMemoryStore(): MemoryStore {
 ================================================ */
 
 /**
- * Encodes an ArrayBuffer or Uint8Array to a base64url string.
- */
-export function base64UrlEncode(buffer: ArrayBuffer | Uint8Array): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-}
-
-/**
- * Decodes a base64url string to a Uint8Array.
- */
-export function base64UrlDecode(str: string): Uint8Array {
-  if (!str) {
-    console.warn('base64UrlDecode received empty input');
-    return new Uint8Array(0);
-  }
-  try {
-    str = str.replace(/-/g, '+').replace(/_/g, '/');
-    while (str.length % 4) {
-      str += '=';
-    }
-    const binStr = atob(str);
-    const buf = new Uint8Array(binStr.length);
-    for (let i = 0; i < binStr.length; i++) {
-      buf[i] = binStr.charCodeAt(i);
-    }
-    return buf;
-  } catch (error) {
-    logError('Error in base64UrlDecode:', error);
-    throw error;
-  }
-}
-
-/**
  * Creates a unique identifier based on rpId and credentialId.
  */
 export async function createUniqueId(rpId: string, credentialId: string): Promise<string> {
@@ -475,31 +459,6 @@ export async function createUniqueId(rpId: string, credentialId: string): Promis
   const uniqueId = base64UrlEncode(new Uint8Array(hash));
   logInfo('Unique ID generated', { uniqueId });
   return uniqueId;
-}
-
-/**
- * Generates a hash of the user ID.
- */
-export async function generateUserIdHash(rpId: string, userId: ArrayBuffer | string): Promise<string> {
-  logInfo('Generating user ID hash');
-
-  let userIdEncoded: string;
-  if (userId instanceof ArrayBuffer) {
-    userIdEncoded = base64UrlEncode(new Uint8Array(userId));
-  } else {
-    userIdEncoded = userId;
-  }
-
-  const combinedString = `${rpId}:${userIdEncoded}`;
-
-  const encoder = new TextEncoder();
-  const data = encoder.encode(combinedString);
-
-  const hash = await subtle.digest('SHA-256', data);
-
-  const userIdHash = base64UrlEncode(new Uint8Array(hash));
-  logInfo('User ID hash generated');
-  return userIdHash;
 }
 
 /* ================================================
@@ -543,13 +502,18 @@ export async function savePrivateKey(
       publicKeyAlgorithm,
       counter: 0,
       userName,
+      creationTime: Date.now(),
     };
 
     // Save StoredCredential via extension
-    await sendMessageToExtension({
+    const response = await sendMessageToExtension({
       type: 'saveStoredCredential',
       storedCredential,
     });
+
+    if (response.error) {
+      throw new Error(response.error);
+    }
 
     logInfo('Private key saved via extension', { credentialId: storedCredential.credentialId });
   } catch (error) {
@@ -565,7 +529,6 @@ export async function loadPrivateKey(credentialId: string): Promise<[CryptoKey, 
   logInfo('Loading private key', { credentialId });
 
   try {
-    // Retrieve StoredCredential via extension
     const storedCredentialResponse = await sendMessageToExtension({
       type: 'getStoredCredential',
       credentialId,
@@ -637,30 +600,6 @@ export async function findCredential(
     return storedCredential;
   } catch (error) {
     logError('Error finding credential via extension', error);
-    throw error;
-  }
-}
-
-/**
- * Updates the credential counter via extension.
- */
-export async function updateCredentialCounterViaExtension(credentialId: string): Promise<void> {
-  logInfo('Updating credential counter via extension', { credentialId });
-
-  try {
-    const response = await sendMessageToExtension({
-      type: 'updateCredentialCounter',
-      credentialId,
-    });
-
-    if (response && response.status === 'success') {
-      logInfo('Credential counter updated successfully via extension', { credentialId });
-    } else {
-      logError('Failed to update credential counter via extension', response);
-      throw new Error('Failed to update credential counter');
-    }
-  } catch (error) {
-    logError('Error updating credential counter via extension', error);
     throw error;
   }
 }

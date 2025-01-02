@@ -439,7 +439,6 @@ export async function handleGetAssertion(
     rpIdHash.length + flags.length + signCount.length
   );
 
-  // Construct authenticator data
   let offset = 0;
   authenticatorData.set(rpIdHash, offset);
   offset += rpIdHash.length;
@@ -569,6 +568,7 @@ export async function getAvailableCredentials(
         userHandle: cred.userHandle,
         credentialId: cred.credentialId,
         uniqueId: cred.uniqueId,
+        creationTime: cred.creationTime,
       });
     }
   }

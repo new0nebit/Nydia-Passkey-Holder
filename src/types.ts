@@ -12,6 +12,7 @@ export interface StoredCredential {
   counter: number;
   userName?: string;
   isSynced?: boolean;
+  creationTime?: number;
 }
 
 export interface Account {
@@ -19,6 +20,7 @@ export interface Account {
   userHandle: string;
   credentialId: string;
   uniqueId: string;
+  creationTime?: number;
 }
 
 export interface RenterdSettings {

@@ -3,10 +3,15 @@ import TerserPlugin from 'terser-webpack-plugin';
 import { BundleAnalyzerPlugin } from 'webpack-bundle-analyzer';
 import MiniCssExtractPlugin from 'mini-css-extract-plugin';
 import CssMinimizerPlugin from 'css-minimizer-webpack-plugin';
+import CopyWebpackPlugin from 'copy-webpack-plugin';
 
 export default (env, argv) => {
   const isAnalyze = env && env.analyze;
   const isDevelopment = argv.mode === 'development';
+  const target = env && env.target === 'firefox' ? 'firefox' : 'chrome';
+
+  // Set output directory based on browser target
+  const outputDir = path.join('extension', target);
 
   return {
     entry: {
@@ -39,7 +44,7 @@ export default (env, argv) => {
           test: /\.css$/,
           use: [
             MiniCssExtractPlugin.loader,
-            'css-loader'
+            'css-loader',
           ],
         },
       ],
@@ -49,11 +54,29 @@ export default (env, argv) => {
     },
     output: {
       filename: '[name].js',
-      path: path.resolve(process.cwd(), 'extension'),
+      path: path.resolve(process.cwd(), outputDir),
     },
     plugins: [
       new MiniCssExtractPlugin({
-        filename: 'styles.css'
+        filename: 'styles.css',
+      }),
+      new CopyWebpackPlugin({
+        patterns: [
+          // Copy all files from assets except manifests
+          {
+            from: 'assets',
+            globOptions: {
+              ignore: [
+                '**/manifest.*.json'
+              ]
+            }
+          },
+          // Copy target-specific manifest and rename it to manifest.json
+          {
+            from: `assets/manifest.${target}.json`,
+            to: 'manifest.json'
+          }
+        ],
       }),
       ...(isAnalyze ? [new BundleAnalyzerPlugin()] : []),
     ],
