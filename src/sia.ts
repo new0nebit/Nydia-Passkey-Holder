@@ -2,13 +2,7 @@ import { getSettings, saveStoredCredential } from './store';
 import { RenterdSettings, StoredCredential } from './types';
 import { logInfo, logError } from './logger';
 
-/**
- * Creates authorization headers for the renterd requests. 
- * Content-Type is optional and can be specified if needed.
- * @param settings - RenterdSettings object.
- * @param contentType - Optional content type for the request.
- * @returns HeadersInit with proper authorization and optional content type.
- */
+// Create Basic Auth headers for renterd API.
 function createRenterdHeaders(settings: RenterdSettings, contentType?: string): HeadersInit {
   const headers: HeadersInit = {
     'Authorization': 'Basic ' + btoa(`root:${settings.password}`),
@@ -19,31 +13,22 @@ function createRenterdHeaders(settings: RenterdSettings, contentType?: string): 
   return headers;
 }
 
-/**
- * Builds the full URL for the renterd requests.
- * @param settings - RenterdSettings object containing serverAddress, serverPort, bucketName.
- * @param fileName - Optional fileName to construct a URL pointing to a specific object.
- * @returns A string with the full URL including the bucket parameter.
- */
-function buildRenterdURL(settings: RenterdSettings, fileName?: string): string {
-  const baseUrl = `http://${settings.serverAddress}:${settings.serverPort}/api/worker/objects`;
+// Build a URL to list objects in the renterd bucket.
+function buildRenterdObjectListURL(settings: RenterdSettings, prefix = ''): string {
+  return `http://${settings.serverAddress}:${settings.serverPort}/api/bus/objects/${encodeURIComponent(prefix)}?bucket=${settings.bucketName}`;
+}
+
+// Build a URL for uploading/downloading a passkey.
+function buildRenterdObjectURL(settings: RenterdSettings, fileName?: string): string {
+  const baseUrl = `http://${settings.serverAddress}:${settings.serverPort}/api/worker/object`;
   const bucketParam = `?bucket=${settings.bucketName}`;
   return fileName
     ? `${baseUrl}/${encodeURIComponent(fileName)}${bucketParam}`
     : `${baseUrl}/${bucketParam}`;
 }
 
-/**
- * Makes a fetch request and handles logging and error checking.
- * @param url - The URL to request.
- * @param options - RequestInit options for fetch.
- * @returns The fetched Response if successful.
- * @throws An Error if the response is not ok.
- */
+// Send the request, check for errors, log the result.
 async function makeRequest(url: string, options: RequestInit): Promise<Response> {
-  // Mask the password before logging settings if provided in headers
-  // Since in this code we do not directly log settings in makeRequest, 
-  // we just proceed with normal logging of request info.
   logInfo('Sending request', { url, options });
   const response = await fetch(url, options);
   logInfo('Response status', { status: response.status });
@@ -53,31 +38,45 @@ async function makeRequest(url: string, options: RequestInit): Promise<Response>
     logError('Non-successful server response', errorText);
     throw new Error(errorText);
   }
-
   return response;
 }
 
-/**
- * Uploads a passkey to renterd.
- * @param fileContent - The file content to upload (as Blob).
- * @param fileName - The name of the file to be stored on renterd.
- * @param settings - RenterdSettings for server connection.
- * @param testConnection - If true, the request is made without a body, used for testing connection.
- * @returns A promise that resolves if the upload is successful.
- * @throws An Error if the upload fails.
- */
+// Get a list of passkeys from the bucket.
+export async function getPasskeysFromRenterd(settings: RenterdSettings): Promise<string[]> {
+  logInfo('Starting getPasskeysFromRenterd', { settings });
+
+  const url = buildRenterdObjectListURL(settings);
+  const headers = createRenterdHeaders(settings);
+
+  try {
+    const response = await makeRequest(url, { method: 'GET', headers });
+    const json = await response.json();
+    logInfo('Parsed objects list', json);
+
+    const objects = json.objects || [];
+    const jsonFiles = objects
+      .map((obj: any) => obj.key)
+      .filter((key: string) => key.endsWith('.json'))
+      .map((key: string) => key.replace(/^\//, ''));
+
+    return jsonFiles;
+  } catch (error) {
+    logError('Error getting passkeys from renterd', error);
+    throw error;
+  }
+}
+
+// Upload a passkey to renterd under the uniqueId name.
 async function uploadPasskeyToRenterd(
   fileContent: Blob | null,
   fileName: string,
   settings: RenterdSettings,
   testConnection = false
 ): Promise<void> {
-  const url = buildRenterdURL(settings, fileName);
-  const headers = createRenterdHeaders(settings, 'application/octet-stream');
+  logInfo('Starting uploadPasskeyToRenterd', { fileName, settings });
 
-  // Mask password in logs
-  const maskedSettings = { ...settings, password: '******' };
-  logInfo('Starting uploadPasskeyToRenterd', { fileName, settings: maskedSettings });
+  const url = buildRenterdObjectURL(settings, fileName);
+  const headers = createRenterdHeaders(settings, 'application/octet-stream');
 
   try {
     await makeRequest(url, {
@@ -92,77 +91,20 @@ async function uploadPasskeyToRenterd(
   }
 }
 
-/**
- * Retrieves a list of passkeys from renterd.
- * @param settings - RenterdSettings for server connection.
- * @returns An array of file names (strings) representing passkeys stored in renterd.
- * @throws An Error if retrieving the list fails.
- */
-export async function getPasskeysFromRenterd(settings: RenterdSettings): Promise<string[]> {
-  // Mask password in logs
-  const maskedSettings = { ...settings, password: '******' };
-  logInfo('Starting getPasskeysFromRenterd with settings', maskedSettings);
-
-  const url = buildRenterdURL(settings);
-  const headers = createRenterdHeaders(settings);
-
-  try {
-    const response = await makeRequest(url, {
-      method: 'GET',
-      headers,
-    });
-
-    // Get raw response for logging
-    const rawResponse = await response.text();
-    logInfo('Raw API response (objects list)', rawResponse);
-
-    // Parse JSON
-    const objects = JSON.parse(rawResponse);
-    logInfo('Parsed objects list', objects);
-
-    // Filter only .json files and remove leading slash
-    const jsonFiles = objects
-      .filter((obj: any) => obj.name.endsWith('.json'))
-      .map((obj: any) => obj.name.replace(/^\//, ''));
-
-    logInfo('Filtered JSON files', jsonFiles);
-    return jsonFiles;
-
-  } catch (error) {
-    logError('Error getting passkeys from renterd', error);
-    throw error;
-  }
-}
-
-/**
- * Downloads a single passkey from renterd.
- * @param fileName - The name of the passkey file to download.
- * @param settings - RenterdSettings for server connection.
- * @returns The parsed passkey data as a StoredCredential.
- * @throws An Error if downloading the passkey fails.
- */
+// Download a passkey from renterd and return it as StoredCredential.
 export async function downloadPasskeyFromRenterd(
   fileName: string,
   settings: RenterdSettings
 ): Promise<StoredCredential> {
-  // Mask password in logs
-  const maskedSettings = { ...settings, password: '******' };
-  logInfo('Starting downloadPasskeyFromRenterd for file', { fileName });
+  logInfo('Starting downloadPasskeyFromRenterd', { fileName, settings });
 
-  const url = buildRenterdURL(settings, fileName);
-  logInfo('Constructed URL for downloading passkey', { url, settings: maskedSettings });
-
+  const url = buildRenterdObjectURL(settings, fileName);
   const headers = createRenterdHeaders(settings);
 
   try {
-    const response = await makeRequest(url, {
-      method: 'GET',
-      headers,
-    });
-
+    const response = await makeRequest(url, { method: 'GET', headers });
     const data = await response.json();
-    logInfo('Successfully downloaded and parsed passkey data', Object.keys(data));
-
+    logInfo('Downloaded passkey data', Object.keys(data));
     return data as StoredCredential;
   } catch (error) {
     logError(`Error downloading passkey ${fileName} from renterd`, error);
@@ -170,7 +112,10 @@ export async function downloadPasskeyFromRenterd(
   }
 }
 
-export async function uploadPasskeyDirect(passkey: StoredCredential): Promise<{ success: boolean; message?: string; error?: string }> {
+// Upload a passkey and mark it as synced in IndexedDB.
+export async function uploadPasskeyDirect(
+  passkey: StoredCredential
+): Promise<{ success: boolean; message?: string; error?: string }> {
   const settings = await getSettings();
   if (!settings) {
     return {
@@ -187,7 +132,7 @@ export async function uploadPasskeyDirect(passkey: StoredCredential): Promise<{ 
     passkey.isSynced = true;
     await saveStoredCredential(passkey);
 
-    logInfo('Passkey successfully uploaded to renterd', { uniqueId: passkey.uniqueId });
+    logInfo('Passkey uploaded successfully', { uniqueId: passkey.uniqueId });
     return {
       success: true,
       message: 'Passkey successfully backed up to Sia.',

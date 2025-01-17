@@ -160,15 +160,6 @@ h2 {
 }
 
 /* Button Color Variants */
-.button-orange {
-  background-color: rgb(255, 165, 0); 
-  color: white; 
-}
-
-.button-orange:hover {
-  background-color: rgb(255, 140, 0);
-}
-
 .button-blue {
   background-color: rgb(59, 130, 246);
 }
@@ -387,12 +378,6 @@ h2 {
   background-color: rgb(243, 244, 246);
 }
 
-.burger-icon {
-  width: 24px;
-  height: 24px;
-  display: block;
-}
-
 .burger-menu {
   position: absolute;
   top: 0;
@@ -574,11 +559,11 @@ h2 {
   }
 
   .alert {
-    color: #ffffff;  /* Белый цвет для всего текста в alert */
+    color: #ffffff;
   }
 
   .alert .icon {
-    stroke: #ffffff;  /* Белый цвет для SVG иконок */
+    stroke: #ffffff;
   }
 
   .alert-success {
