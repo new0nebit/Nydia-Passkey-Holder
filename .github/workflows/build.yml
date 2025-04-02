@@ -43,12 +43,12 @@ jobs:
       - name: Create extension archives (Ubuntu only)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          mkdir nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}
-          mkdir nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}
-          cp -r extension/chrome/* nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}/
-          cp -r extension/firefox/* nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}/
-          zip -r nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}
-          zip -r nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}
+          mkdir Nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}
+          mkdir Nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}
+          cp -r extension/chrome/* Nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}/
+          cp -r extension/firefox/* Nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}/
+          zip -r Nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip Nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}
+          zip -r Nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip Nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}
 
       - name: Upload artifacts (Ubuntu only)
         if: matrix.os == 'ubuntu-latest'
@@ -56,8 +56,8 @@ jobs:
         with:
           name: extensions
           path: |
-            nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip
-            nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip
+            Nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip
+            Nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip
           if-no-files-found: error
 
   release:
@@ -80,7 +80,7 @@ jobs:
             Changelog for ${{ github.ref_name }}:
             - Add a description of the changes...
           files: |
-            nydia-chrome-v${{ needs.build.outputs.CLEAN_TAG }}.zip
-            nydia-firefox-v${{ needs.build.outputs.CLEAN_TAG }}.zip
+            Nydia-chrome-v${{ needs.build.outputs.CLEAN_TAG }}.zip
+            Nydia-firefox-v${{ needs.build.outputs.CLEAN_TAG }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
