@@ -1,4 +1,39 @@
+export const user = `<svg class="icon user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+    <circle cx="12" cy="7" r="4"/>
+  </svg>`;
+
+export const www = `<svg class="icon" viewBox="0 0 122.88 95.23" style="enable-background:new 0 0 122.88 95.23" xml:space="preserve"><g><path d="M0.06,64.15C0.02,63.25,0,62.35,0,61.44c0-4.24,0.41-8.33,1.22-12.35c0.77-3.94,1.95-7.74,3.54-11.46 c0-0.04,0.04-0.11,0.07-0.15c1.58-3.72,3.5-7.19,5.68-10.47c2.17-3.28,4.68-6.3,7.45-9.07c2.76-2.8,5.79-5.27,9.07-7.44 c3.28-2.21,6.78-4.09,10.47-5.68c3.76-1.62,7.63-2.8,11.61-3.61C53.07,0.41,57.2,0,61.44,0c4.24,0,8.33,0.41,12.35,1.22 c3.94,0.77,7.74,1.95,11.46,3.54c0.04,0,0.11,0.04,0.15,0.07c3.69,1.58,7.19,3.5,10.47,5.68c3.28,2.17,6.3,4.68,9.07,7.44 c2.8,2.76,5.27,5.79,7.45,9.07c2.21,3.28,4.09,6.78,5.68,10.47c1.62,3.76,2.8,7.63,3.61,11.61c0.81,3.98,1.22,8.11,1.22,12.35 c0,0.91-0.02,1.81-0.06,2.71C82.02,64.15,40.96,64.15,0.06,64.15L0.06,64.15z M82.41,70.94h7.04l3.71,15.25l4.71-15.25h7.9 l4.87,15.27l3.71-15.27h8.48l-8.47,24.29h-7.84l-4.66-14.62l-4.51,14.62h-7.89l-7.79-22.17l-7.73,22.17h-7.84l-4.66-14.62 l-4.51,14.62h-7.89l-7.79-22.17l-7.73,22.17h-7.84l-4.66-14.62l-4.51,14.62H8.63L0.09,70.94h8.53l3.71,15.25l4.7-15.25h7.9 l4.87,15.27l3.71-15.27h6.99h1.49h7.04l3.71,15.25l4.71-15.25h7.9l4.87,15.27l3.71-15.27h6.99H82.41L82.41,70.94z M5.45,58.75 h16.99c0.63-8.4,3.43-16.84,8.4-25.36H12.86c-1.14,1.99-2.17,4.05-3.1,6.23c-0.04,0.04-0.04,0.07-0.07,0.11 c-1.4,3.35-2.51,6.82-3.21,10.43C5.93,52.96,5.57,55.8,5.45,58.75L5.45,58.75z M16.36,28.01h17.95 c5.12-7.37,11.87-14.78,20.27-22.22c-1.51,0.18-2.99,0.41-4.42,0.7c-3.65,0.74-7.15,1.81-10.54,3.28c-3.43,1.47-6.63,3.21-9.62,5.2 c-2.99,1.99-5.71,4.24-8.26,6.78c-1.95,1.95-3.76,4.02-5.38,6.23V28.01L16.36,28.01z M68.3,5.79c8.44,7.45,15.18,14.85,20.27,22.22 h17.95c-1.62-2.21-3.43-4.28-5.38-6.23c-2.54-2.54-5.27-4.79-8.26-6.78c-2.95-1.99-6.16-3.72-9.62-5.2 c-0.04-0.04-0.07-0.04-0.11-0.07c-3.35-1.4-6.82-2.51-10.43-3.21c-1.47-0.3-2.95-0.52-4.42-0.7V5.79L68.3,5.79z M110.02,33.39 H92.03c4.98,8.51,7.78,16.95,8.4,25.36h16.99c-0.15-2.95-0.48-5.79-1.03-8.59c-0.74-3.65-1.81-7.15-3.28-10.54 C112.19,37.45,111.16,35.38,110.02,33.39L110.02,33.39L110.02,33.39z M64.13,9.29v18.72h17.84C77.29,21.82,71.35,15.59,64.13,9.29 L64.13,9.29z M64.13,33.39v25.36h30.92c-0.7-8.33-3.8-16.77-9.32-25.36H64.13L64.13,33.39z M58.75,58.75V33.39h-21.6 c-5.53,8.59-8.62,17.03-9.32,25.36H58.75L58.75,58.75z M58.75,28.01V9.29c-7.22,6.3-13.16,12.53-17.84,18.72H58.75L58.75,28.01z"/></g></svg>`;
+
 export const icons = {
+  alert: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <line x1="12" y1="8" x2="12" y2="12"/>
+    <line x1="12" y1="16" x2="12" y2="16"/>
+  </svg>`,
+
+  burger: `<svg class="burger-icon" viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none">
+    <line x1="3" y1="12" x2="21" y2="12"></line>
+    <line x1="3" y1="6" x2="21" y2="6"></line>
+    <line x1="3" y1="18" x2="21" y2="18"></line>
+  </svg>`,
+
+  check: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+    <path d="m9 12 2 2 4-4"/> 
+  </svg>`,
+
+  delete: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <polyline points="3 6 5 6 21 6"/>
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+  </svg>`,
+
+  info: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <path d="M12 16v-4"/>
+    <path d="M12 8h.01"/>
+  </svg>`,
+
   logo: `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
 <svg width="100%" height="100%" viewBox="0 0 2047 222" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
@@ -80,23 +115,16 @@ export const icons = {
 </svg>
 `,
 
-  import: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-  <polyline points="7 10 12 15 17 10"/>
-  <line x1="12" y1="15" x2="12" y2="3"/>
-</svg>`,
+  question: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <path d="M9.09 9a3 3 0 0 1 5.82 1c0 2-3 3-3 3"/>
+    <line x1="12" y1="16" x2="12" y2="16"/>
+  </svg>`,
 
   settings: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
     <circle cx="12" cy="12" r="3"/>
     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
 </svg>`,
-
-  user: `<svg class="icon user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-    <circle cx="12" cy="7" r="4"/>
-  </svg>`,
-
-  www: `<svg class="icon" viewBox="0 0 122.88 95.23" style="enable-background:new 0 0 122.88 95.23" xml:space="preserve"><g><path d="M0.06,64.15C0.02,63.25,0,62.35,0,61.44c0-4.24,0.41-8.33,1.22-12.35c0.77-3.94,1.95-7.74,3.54-11.46 c0-0.04,0.04-0.11,0.07-0.15c1.58-3.72,3.5-7.19,5.68-10.47c2.17-3.28,4.68-6.3,7.45-9.07c2.76-2.8,5.79-5.27,9.07-7.44 c3.28-2.21,6.78-4.09,10.47-5.68c3.76-1.62,7.63-2.8,11.61-3.61C53.07,0.41,57.2,0,61.44,0c4.24,0,8.33,0.41,12.35,1.22 c3.94,0.77,7.74,1.95,11.46,3.54c0.04,0,0.11,0.04,0.15,0.07c3.69,1.58,7.19,3.5,10.47,5.68c3.28,2.17,6.3,4.68,9.07,7.44 c2.8,2.76,5.27,5.79,7.45,9.07c2.21,3.28,4.09,6.78,5.68,10.47c1.62,3.76,2.8,7.63,3.61,11.61c0.81,3.98,1.22,8.11,1.22,12.35 c0,0.91-0.02,1.81-0.06,2.71C82.02,64.15,40.96,64.15,0.06,64.15L0.06,64.15z M82.41,70.94h7.04l3.71,15.25l4.71-15.25h7.9 l4.87,15.27l3.71-15.27h8.48l-8.47,24.29h-7.84l-4.66-14.62l-4.51,14.62h-7.89l-7.79-22.17l-7.73,22.17h-7.84l-4.66-14.62 l-4.51,14.62h-7.89l-7.79-22.17l-7.73,22.17h-7.84l-4.66-14.62l-4.51,14.62H8.63L0.09,70.94h8.53l3.71,15.25l4.7-15.25h7.9 l4.87,15.27l3.71-15.27h6.99h1.49h7.04l3.71,15.25l4.71-15.25h7.9l4.87,15.27l3.71-15.27h6.99H82.41L82.41,70.94z M5.45,58.75 h16.99c0.63-8.4,3.43-16.84,8.4-25.36H12.86c-1.14,1.99-2.17,4.05-3.1,6.23c-0.04,0.04-0.04,0.07-0.07,0.11 c-1.4,3.35-2.51,6.82-3.21,10.43C5.93,52.96,5.57,55.8,5.45,58.75L5.45,58.75z M16.36,28.01h17.95 c5.12-7.37,11.87-14.78,20.27-22.22c-1.51,0.18-2.99,0.41-4.42,0.7c-3.65,0.74-7.15,1.81-10.54,3.28c-3.43,1.47-6.63,3.21-9.62,5.2 c-2.99,1.99-5.71,4.24-8.26,6.78c-1.95,1.95-3.76,4.02-5.38,6.23V28.01L16.36,28.01z M68.3,5.79c8.44,7.45,15.18,14.85,20.27,22.22 h17.95c-1.62-2.21-3.43-4.28-5.38-6.23c-2.54-2.54-5.27-4.79-8.26-6.78c-2.95-1.99-6.16-3.72-9.62-5.2 c-0.04-0.04-0.07-0.04-0.11-0.07c-3.35-1.4-6.82-2.51-10.43-3.21c-1.47-0.3-2.95-0.52-4.42-0.7V5.79L68.3,5.79z M110.02,33.39 H92.03c4.98,8.51,7.78,16.95,8.4,25.36h16.99c-0.15-2.95-0.48-5.79-1.03-8.59c-0.74-3.65-1.81-7.15-3.28-10.54 C112.19,37.45,111.16,35.38,110.02,33.39L110.02,33.39L110.02,33.39z M64.13,9.29v18.72h17.84C77.29,21.82,71.35,15.59,64.13,9.29 L64.13,9.29z M64.13,33.39v25.36h30.92c-0.7-8.33-3.8-16.77-9.32-25.36H64.13L64.13,33.39z M58.75,58.75V33.39h-21.6 c-5.53,8.59-8.62,17.03-9.32,25.36H58.75L58.75,58.75z M58.75,28.01V9.29c-7.22,6.3-13.16,12.53-17.84,18.72H58.75L58.75,28.01z"/></g></svg>`,
 
   sia: `<svg class="icon sia" width="100%" height="100%" viewBox="0 0 10956 10954" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
     <rect id="Layer_2_1_" x="-1468.28" y="-1466.71" width="13888.9" height="13888.9" style="fill:none;fill-rule:nonzero;"/>
@@ -110,49 +138,14 @@ export const icons = {
     </g>
   </svg>`,
 
-  delete: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-    <polyline points="3 6 5 6 21 6"/>
-    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-  </svg>`,
-
-  check: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
-    <path d="m9 12 2 2 4-4"/> 
-  </svg>`,
-
-  alert: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="12" cy="12" r="10"/>
-    <line x1="12" y1="8" x2="12" y2="12"/>
-    <line x1="12" y1="16" x2="12" y2="16"/>
-  </svg>`,
-
-  question: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="12" cy="12" r="10"/>
-    <path d="M9.09 9a3 3 0 0 1 5.82 1c0 2-3 3-3 3"/>
-    <line x1="12" y1="16" x2="12" y2="16"/>
-  </svg>`,
-
-  info: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="12" cy="12" r="10"/>
-    <path d="M12 16v-4"/>
-    <path d="M12 8h.01"/>
+  user: `<svg class="icon user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+    <circle cx="12" cy="7" r="4"/>
   </svg>`,
 
   warning: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
     <line x1="12" y1="9" x2="12" y2="13"></line>
     <line x1="12" y1="17" x2="12.01" y2="17"></line>
-  </svg>`,
-
-  export: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-    <polyline points="7 10 12 15 17 10"/>
-    <line x1="12" y1="15" x2="12" y2="3"/>
-  </svg>`,
-
-  burger: `<svg class="burger-icon" viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none">
-    <line x1="3" y1="12" x2="21" y2="12"></line>
-    <line x1="3" y1="6" x2="21" y2="6"></line>
-    <line x1="3" y1="18" x2="21" y2="18"></line>
   </svg>`,
 };
