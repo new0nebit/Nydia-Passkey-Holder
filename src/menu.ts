@@ -1,25 +1,39 @@
 import browser from 'webextension-polyfill';
-import { StoredCredential, RenterdSettings } from './types';
-import { getAllStoredCredentialsFromDB, getSettings, saveSettings } from './store';
+
 import { icons } from './icons';
+import {
+  getSettings,
+  setNotificationDisplayer,
+  setOnSettingsComplete,
+  showSettingsForm,
+  validateSettings,
+} from './settings';
+import { getAllStoredCredentialsFromDB } from './store';
+import { StoredCredential } from './types';
 
 // Types for notifications
 type NotificationType = 'success' | 'error' | 'info' | 'warning';
 type ModalType = 'alert' | 'confirm' | 'prompt';
 
-class Menu {
+export class Menu {
   constructor() {
+    // Set up notification handler and callback for settings completion
+    setNotificationDisplayer({
+      showNotification: this.showNotification.bind(this),
+    });
+    setOnSettingsComplete(() => this.displayPasskeys());
+
     document.addEventListener('DOMContentLoaded', async () => {
+      const root = document.getElementById('root');
+      if (!root) return;
+
       await this.displayPasskeys();
     });
   }
 
   // Notification and modal methods
-  private showNotification(
-    type: NotificationType,
-    title: string,
-    message: string
-  ): void {
+  private showNotification(type: NotificationType, title: string, message: string): void {
+    // This is the same notification logic that can now be reused via setNotificationDisplayer
     const notification = document.createElement('div');
     notification.className = `alert alert-${type}`;
 
@@ -27,10 +41,10 @@ class Menu {
       type === 'success'
         ? icons.check
         : type === 'error'
-        ? icons.alert
-        : type === 'warning'
-        ? icons.warning
-        : icons.info;
+          ? icons.alert
+          : type === 'warning'
+            ? icons.warning
+            : icons.info;
 
     notification.innerHTML = `
       ${iconSvg}
@@ -54,21 +68,13 @@ class Menu {
     }, 3000);
   }
 
-  private showModal(
-    type: ModalType,
-    title: string,
-    message: string
-  ): Promise<boolean> {
+  private showModal(type: ModalType, title: string, message: string): Promise<boolean> {
     return new Promise((resolve) => {
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
 
       const iconSvg =
-        type === 'confirm'
-          ? icons.question
-          : type === 'alert'
-          ? icons.info
-          : icons.warning;
+        type === 'confirm' ? icons.question : type === 'alert' ? icons.info : icons.warning;
 
       overlay.innerHTML = `
         <div class="modal-content">
@@ -123,12 +129,11 @@ class Menu {
   async displayPasskeys() {
     try {
       const storedCredentials = await getAllStoredCredentialsFromDB();
-      
+
       // Sort by creation date (new on top):
       storedCredentials.sort((a, b) => {
         const aTime = a.creationTime ?? 0;
         const bTime = b.creationTime ?? 0;
-        // Make the most recent ones at the beginning: bTime - aTime
         return bTime - aTime;
       });
 
@@ -195,7 +200,7 @@ class Menu {
           const button = document.createElement('button');
           button.className = 'button button-green button-gap';
           button.innerHTML = `${icons.settings}<span>Renterd Settings</span>`;
-          button.onclick = () => this.showSettingsForm();
+          button.onclick = () => showSettingsForm();
 
           buttonWrapper.appendChild(button);
           container.appendChild(title);
@@ -246,7 +251,7 @@ class Menu {
     settingsMenuItem.innerHTML = `${icons.settings}<span>Renterd Settings</span>`;
     settingsMenuItem.className = 'menu-item';
     settingsMenuItem.onclick = () => {
-      this.showSettingsForm();
+      showSettingsForm();
       burgerMenu.classList.add('hidden');
       burgerButton.classList.remove('active');
     };
@@ -259,10 +264,7 @@ class Menu {
     };
 
     document.addEventListener('click', (e) => {
-      if (
-        !menuContainer.contains(e.target as Node) &&
-        !burgerMenu.classList.contains('hidden')
-      ) {
+      if (!menuContainer.contains(e.target as Node) && !burgerMenu.classList.contains('hidden')) {
         burgerMenu.classList.add('hidden');
         burgerButton.classList.remove('active');
       }
@@ -281,8 +283,6 @@ class Menu {
   // Extract the root domain
   private getRootDomain(rpId: string): string {
     const parts = rpId.toLowerCase().split('.');
-    // If there are more than two domain parts, we collect the last two parts
-    // For example, login.example.com -> example.com
     if (parts.length > 2) {
       return parts.slice(-2).join('.');
     }
@@ -312,7 +312,6 @@ class Menu {
     siteInfo.className = 'site-info';
 
     const siteIcon = document.createElement('img');
-    // Use the root domain instead of the full rpId
     siteIcon.src = `https://www.google.com/s2/favicons?domain=${this.getRootDomain(passkey.rpId)}&sz=64`;
     siteIcon.alt = passkey.rpId;
     siteIcon.className = 'site-icon';
@@ -348,7 +347,9 @@ class Menu {
     const uploadButtonText = passkey.isSynced ? 'Synced' : 'Backup to Sia';
     const uploadButtonIcon = passkey.isSynced ? icons.check : icons.sia;
     uploadButton.innerHTML = `${uploadButtonIcon}<span>${uploadButtonText}</span>`;
-    uploadButton.className = passkey.isSynced ? 'button button-sync upload-button' : 'button button-green upload-button';
+    uploadButton.className = passkey.isSynced
+      ? 'button button-sync upload-button'
+      : 'button button-green upload-button';
     uploadButton.onclick = () => {
       this.uploadPasskey(passkey, uploadButton);
     };
@@ -370,7 +371,7 @@ class Menu {
     const confirmed = await this.showModal(
       'confirm',
       'Delete Passkey',
-      'Are you sure you want to delete this Passkey? This action cannot be undone.'
+      'Are you sure you want to delete this Passkey? This action cannot be undone.',
     );
 
     if (confirmed) {
@@ -382,11 +383,7 @@ class Menu {
 
         request.onsuccess = () => {
           this.displayPasskeys();
-          this.showNotification(
-            'success',
-            'Success!',
-            'Passkey deleted successfully.'
-          );
+          this.showNotification('success', 'Success!', 'Passkey deleted successfully.');
         };
 
         request.onerror = () => {
@@ -410,13 +407,12 @@ class Menu {
       button.disabled = true;
     }
 
-    // Check settings first
     const settings = await getSettings();
-    if (!settings || !this.validateSettings(settings)) {
+    if (!settings || !validateSettings(settings)) {
       this.showNotification(
         'error',
         'Error!',
-        'Cannot sync passkeys, no renterd server settings found.'
+        'Cannot sync passkeys, no renterd server settings found.',
       );
       if (button instanceof HTMLButtonElement) {
         this.resetSyncButton(button);
@@ -432,23 +428,20 @@ class Menu {
       let notificationTitle = '';
       let notificationMessage = '';
 
-      // If an error occurred during upload or download
       if (uploadResult.error || downloadResult.error) {
         notificationType = 'error';
         notificationTitle = 'Error!';
         notificationMessage = 'Error syncing Passkeys with renterd server. Please try again later.';
       } else if (uploadResult.failedCount > 0 || downloadResult.failedCount > 0) {
-        // Partial failures
         notificationType = 'warning';
         notificationTitle = 'Warning';
-        notificationMessage = 'Some Passkeys failed to synchronize. Check your settings and try again.';
+        notificationMessage =
+          'Some Passkeys failed to synchronize. Check your settings and try again.';
       } else if (downloadResult.empty) {
-        // No passkeys found on server
         notificationType = 'info';
         notificationTitle = 'Info';
         notificationMessage = 'No Passkeys found on renterd server.';
       } else {
-        // Everything succeeded
         notificationType = 'success';
         notificationTitle = 'Success!';
         notificationMessage = `Successfully synchronized ${downloadResult.syncedCount} passkey(s).`;
@@ -464,7 +457,7 @@ class Menu {
       this.showNotification(
         'error',
         'Error!',
-        'Error syncing Passkeys with renterd server. Please try again later.'
+        'Error syncing Passkeys with renterd server. Please try again later.',
       );
     } finally {
       if (button instanceof HTMLButtonElement) {
@@ -481,7 +474,11 @@ class Menu {
   }
 
   // Upload only unsynced passkeys
-  private async uploadUnsyncedPasskeys(): Promise<{uploadedCount: number; failedCount: number; error: boolean}> {
+  private async uploadUnsyncedPasskeys(): Promise<{
+    uploadedCount: number;
+    failedCount: number;
+    error: boolean;
+  }> {
     const storedCredentials = await getAllStoredCredentialsFromDB();
     const unsynced = storedCredentials.filter((p) => !p.isSynced);
 
@@ -499,13 +496,13 @@ class Menu {
         return {
           uploadedCount: response.uploadedCount || 0,
           failedCount: response.failedCount || 0,
-          error: false
+          error: false,
         };
       } else {
         return {
           uploadedCount: 0,
           failedCount: unsynced.length,
-          error: true
+          error: true,
         };
       }
     } catch (error) {
@@ -513,31 +510,36 @@ class Menu {
       return {
         uploadedCount: 0,
         failedCount: unsynced.length,
-        error: true
+        error: true,
       };
     }
   }
 
   // Download new passkeys from renterd
-  private async downloadNewPasskeys(): Promise<{syncedCount: number; failedCount: number; empty: boolean; error: boolean}> {
+  private async downloadNewPasskeys(): Promise<{
+    syncedCount: number;
+    failedCount: number;
+    empty: boolean;
+    error: boolean;
+  }> {
     try {
       const response = await browser.runtime.sendMessage({
-        type: 'syncFromSia'
+        type: 'syncFromSia',
       });
 
       if (response && response.success) {
         return {
           syncedCount: response.syncedCount || 0,
           failedCount: response.failedCount || 0,
-          empty: (response.syncedCount === 0 && response.failedCount === 0),
-          error: false
+          empty: response.syncedCount === 0 && response.failedCount === 0,
+          error: false,
         };
       } else {
         return {
           syncedCount: 0,
           failedCount: 0,
           empty: true,
-          error: true
+          error: true,
         };
       }
     } catch (error) {
@@ -546,16 +548,13 @@ class Menu {
         syncedCount: 0,
         failedCount: 0,
         empty: true,
-        error: true
+        error: true,
       };
     }
   }
 
   // Backup Passkey
-  async uploadPasskey(
-    passkey: StoredCredential,
-    uploadButton: HTMLButtonElement
-  ) {
+  async uploadPasskey(passkey: StoredCredential, uploadButton: HTMLButtonElement) {
     const uploadButtonText = uploadButton.querySelector('span');
     if (uploadButtonText) {
       uploadButtonText.textContent = 'Backing up...';
@@ -601,203 +600,6 @@ class Menu {
     }
   }
 
-  // Show settings form
-  async showSettingsForm() {
-    const passkeyList = document.getElementById('passkey-list');
-    if (passkeyList) {
-      const existingHeader = document.querySelector('.header-container');
-      if (existingHeader) {
-        existingHeader.remove();
-      }
-
-      passkeyList.innerHTML = '';
-
-      const form = document.createElement('form');
-      form.id = 'settings-form';
-
-      const fields = [
-        { label: 'Server Address', name: 'serverAddress', type: 'text' },
-        { label: 'Server Port', name: 'serverPort', type: 'text' },
-        { label: 'Password', name: 'password', type: 'password' },
-        { label: 'Bucket Name', name: 'bucketName', type: 'text' },
-      ];
-
-      for (const field of fields) {
-        const fieldContainer = document.createElement('div');
-        fieldContainer.className = 'field-container';
-
-        const label = document.createElement('label');
-        label.textContent = field.label;
-        label.htmlFor = field.name;
-
-        const input = document.createElement('input');
-        input.name = field.name;
-        input.type = field.type;
-        input.required = true;
-
-        if (field.name === 'serverPort') {
-          input.maxLength = 5;
-          input.addEventListener('input', (e) => {
-            const target = e.target as HTMLInputElement;
-            target.value = target.value.replace(/[^\d]/g, '');
-          });
-        }
-
-        fieldContainer.appendChild(label);
-        fieldContainer.appendChild(input);
-        form.appendChild(fieldContainer);
-      }
-
-      const existingSettings = await getSettings();
-      if (existingSettings) {
-        (form.elements.namedItem('serverAddress') as HTMLInputElement).value =
-          existingSettings.serverAddress;
-        (form.elements.namedItem('serverPort') as HTMLInputElement).value =
-          existingSettings.serverPort.toString();
-        (form.elements.namedItem('password') as HTMLInputElement).value =
-          existingSettings.password;
-        (form.elements.namedItem('bucketName') as HTMLInputElement).value =
-          existingSettings.bucketName;
-      }
-
-      const buttonContainer = document.createElement('div');
-      buttonContainer.className = 'button-container';
-
-      const testButton = document.createElement('button');
-      testButton.type = 'button';
-      testButton.textContent = 'Test Connection';
-      testButton.className = 'button button-indigo';
-      testButton.onclick = () => this.testConnection(form);
-
-      const saveButton = document.createElement('button');
-      saveButton.type = 'submit';
-      saveButton.textContent = 'Save';
-      saveButton.className = 'button button-blue';
-
-      const cancelButton = document.createElement('button');
-      cancelButton.type = 'button';
-      cancelButton.textContent = 'Back';
-      cancelButton.className = 'button button-gray';
-      cancelButton.onclick = () => this.displayPasskeys();
-
-      buttonContainer.appendChild(testButton);
-      buttonContainer.appendChild(saveButton);
-      buttonContainer.appendChild(cancelButton);
-
-      form.appendChild(buttonContainer);
-
-      form.onsubmit = async (evt) => {
-        evt.preventDefault();
-        await this.saveSettingsFromForm(form);
-        this.displayPasskeys();
-      };
-
-      const passkeyListRef = document.getElementById('passkey-list');
-      if (passkeyListRef) {
-        passkeyListRef.appendChild(form);
-      }
-    }
-  }
-
-  // Test connection
-  private async testConnection(form: HTMLFormElement) {
-    const settings = this.getSettingsFromForm(form);
-    if (!this.validateSettings(settings)) {
-      this.showNotification(
-        'error',
-        'Error!',
-        'Please fill out all fields correctly.'
-      );
-      return;
-    }
-
-    const testButton = form.querySelector(
-      'button[type="button"]'
-    ) as HTMLButtonElement;
-    const originalText = testButton.textContent;
-
-    try {
-      testButton.textContent = 'Testing...';
-      testButton.disabled = true;
-
-      const url = `http://${settings.serverAddress}:${settings.serverPort}/api/worker/state`;
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
-
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          Authorization: 'Basic ' + btoa(`root:${settings.password}`),
-        },
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      this.showNotification('success', 'Success!', 'Connection successful.');
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        this.showNotification(
-          'error',
-          'Error!',
-          'Connection timed out after 2 seconds.'
-        );
-      } else {
-        this.showNotification(
-          'error',
-          'Error!',
-          'Failed to connect to renterd server.'
-        );
-      }
-    } finally {
-      testButton.textContent = originalText;
-      testButton.disabled = false;
-    }
-  }
-
-  // Validate settings
-  private validateSettings(settings: RenterdSettings): boolean {
-    const ipDomainPattern = /^(?!-)[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*(?<!-)$/;
-    if (!ipDomainPattern.test(settings.serverAddress)) return false;
-
-    const port = settings.serverPort;
-    if (port <= 0 || port > 65535 || !Number.isInteger(port)) return false;
-
-    if (!settings.bucketName) return false;
-    return true;
-  }
-
-  // Get settings from form
-  private getSettingsFromForm(form: HTMLFormElement): RenterdSettings {
-    const formData = new FormData(form);
-    return {
-      serverAddress: formData.get('serverAddress') as string,
-      serverPort: Number(formData.get('serverPort')),
-      password: formData.get('password') as string,
-      bucketName: formData.get('bucketName') as string,
-    };
-  }
-
-  // Save settings from form
-  private async saveSettingsFromForm(form: HTMLFormElement) {
-    const settings = this.getSettingsFromForm(form);
-    if (!this.validateSettings(settings)) {
-      this.showNotification(
-        'error',
-        'Error!',
-        'Please fill out all fields correctly.'
-      );
-      return;
-    }
-
-    await saveSettings(settings);
-    this.showNotification('success', 'Success!', 'Settings saved successfully.');
-  }
-
   // Open database
   private async openDatabase(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
@@ -806,8 +608,7 @@ class Menu {
       request.onupgradeneeded = () => {
         const db = request.result;
         const transaction =
-          request.transaction ||
-          db.transaction(['storedCredentials', 'settings'], 'versionchange');
+          request.transaction || db.transaction(['storedCredentials', 'settings'], 'versionchange');
 
         let objectStore: IDBObjectStore;
 
