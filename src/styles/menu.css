@@ -1,0 +1,450 @@
+/* ================================= */
+/* Menu and Passkeys screen */
+/* ================================= */
+
+/* Logo and header */
+.logo-container {
+  margin-top: 1px;
+  margin-bottom: 22px;
+  padding-left: 1px;
+  color: #000000;
+}
+
+h2 {
+  font-size: 18px;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 12px;
+  color: #000;
+}
+
+/* Passkey list container */
+#passkey-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: calc(570px - 60px);
+  overflow-y: auto;
+}
+
+/* Passkey items */
+.passkey-item {
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  transition: box-shadow 0.2s ease;
+}
+
+.passkey-item:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Site info */
+.site-info {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.site-icon {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+}
+
+.site-info span {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* User info */
+.user-info {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  color: rgb(75, 85, 99);
+}
+
+.user-info span {
+  font-size: 14px;
+}
+
+/* Action container for passkeys */
+.action-container {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* ================================= */
+/* Buttons */
+/* ================================= */
+.button-green {
+  background-color: rgb(34, 197, 94);
+}
+
+.button-green:hover {
+  background-color: rgb(22, 163, 74);
+}
+
+.button-indigo {
+  background-color: rgb(79, 70, 229);
+}
+
+.button-indigo:hover {
+  background-color: rgb(67, 56, 202);
+}
+
+.button-sync {
+  background-color: rgb(22, 163, 74);
+}
+
+.button-sync:hover {
+  background-color: rgb(16, 123, 56);
+}
+
+.button-red {
+  background-color: rgb(239, 68, 68);
+}
+
+.button-red:hover {
+  background-color: rgb(220, 38, 38);
+}
+
+/* When uploading is in progress */
+.upload-button.uploading {
+  background-color: rgb(220, 252, 231);
+  color: rgb(22, 163, 74);
+  cursor: default;
+}
+
+/* ================================= */
+/* Header / Burger menu */
+/* ================================= */
+.header-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.menu-container {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1px;
+  margin-bottom: 22px;
+}
+
+.burger-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 6px;
+  transition: background-color 0.2s;
+  color: rgb(75, 85, 99);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.burger-button:hover,
+.burger-button.active {
+  background-color: rgb(243, 244, 246);
+}
+
+.burger-menu {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  width: 180px;
+  background: white;
+  border-radius: 8px;
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  padding: 8px;
+  margin-right: 8px;
+  z-index: 1000;
+}
+
+.burger-menu.hidden {
+  display: none;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: rgb(55, 65, 81);
+  font-size: 14px;
+  text-align: left;
+  border-radius: 6px;
+  transition: background-color 0.2s;
+}
+
+.menu-item:hover {
+  background-color: rgb(243, 244, 246);
+}
+
+.menu-item svg {
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  stroke: currentColor;
+  fill: none;
+}
+
+.menu-item span {
+  flex: 1;
+}
+
+/* ================================= */
+/* Animation for the Sia icon */
+/* ================================= */
+@keyframes rotateClockwise {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.uploading .sia .inner-logo {
+  animation: rotateClockwise 1s linear infinite;
+  transform-origin: 50% 50%;
+  transform-box: view-box;
+}
+
+/* ================================= */
+/* Modal styles */
+/* ================================= */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  width: 90%;
+  max-width: 320px;
+  box-shadow:
+    0 20px 25px -5px rgba(0, 0, 0, 0.1),
+    0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.modal-header .icon {
+  width: 24px;
+  height: 24px;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: rgb(17, 24, 39);
+  margin-bottom: 4px;
+}
+
+.modal-message {
+  font-size: 14px;
+  color: rgb(107, 114, 128);
+  line-height: 1.5;
+}
+
+.modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.modal-confirm,
+.modal-cancel {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.modal-confirm {
+  background-color: rgb(59, 130, 246);
+  color: white;
+}
+
+.modal-confirm:hover {
+  background-color: rgb(37, 99, 235);
+}
+
+.modal-cancel {
+  background-color: rgb(229, 231, 235);
+  color: rgb(17, 24, 39);
+}
+
+.modal-cancel:hover {
+  background-color: rgb(209, 213, 219);
+}
+
+/* ================================= */
+/* Additional menu classes */
+/* ================================= */
+.centered-container {
+  text-align: center;
+  padding: 20px;
+}
+
+.small-title {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.small-subtitle {
+  margin-bottom: 16px;
+  font-size: 12px;
+}
+
+.flex-center {
+  display: flex;
+  justify-content: center;
+}
+
+.button-gap {
+  gap: 8px;
+}
+
+/* ================================= */
+/* Dark theme */
+/* ================================= */
+@media (prefers-color-scheme: dark) {
+  .logo-container {
+    color: #ffffff;
+  }
+
+  h2 {
+    color: #ffffff;
+  }
+
+  .passkey-item {
+    background-color: #383838;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    border: 1px solid #4a4a4a;
+  }
+
+  .site-info span,
+  .user-info span {
+    color: #ffffff;
+  }
+
+  .user-info {
+    color: #b0b0b0;
+  }
+
+  .burger-button {
+    color: #b0b0b0;
+  }
+
+  .burger-button:hover,
+  .burger-button.active {
+    background-color: #3a3a3a;
+  }
+
+  .burger-menu {
+    background: #2e2e2e;
+    box-shadow:
+      0 4px 6px -1px rgba(0, 0, 0, 0.7),
+      0 2px 4px -1px rgba(0, 0, 0, 0.5);
+  }
+
+  .menu-item {
+    color: #f0f0f0;
+  }
+
+  .menu-item:hover {
+    background-color: #3a3a3a;
+  }
+
+  .button-green,
+  .button-indigo,
+  .button-sync,
+  .button-red {
+    background-color: #4a4a4a;
+  }
+
+  .button-green:hover,
+  .button-indigo:hover,
+  .button-sync:hover,
+  .button-red:hover {
+    background-color: #5a5a5a;
+  }
+
+  .upload-button.uploading {
+    background-color: #4a4a4a;
+    color: #f0f0f0;
+    cursor: default;
+  }
+
+  .modal-content {
+    background: #2e2e2e;
+    box-shadow:
+      0 20px 25px -5px rgba(0, 0, 0, 0.7),
+      0 10px 10px -5px rgba(0, 0, 0, 0.5);
+  }
+
+  .modal-title {
+    color: #ffffff;
+  }
+
+  .modal-message {
+    color: #b0b0b0;
+  }
+
+  .modal-confirm {
+    background-color: #4a4a4a;
+    color: #f0f0f0;
+  }
+
+  .modal-confirm:hover {
+    background-color: #5a5a5a;
+  }
+
+  .modal-cancel {
+    background-color: #616161;
+    color: #f0f0f0;
+  }
+
+  .modal-cancel:hover {
+    background-color: #424242;
+  }
+}

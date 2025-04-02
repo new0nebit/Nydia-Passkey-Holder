@@ -1,0 +1,213 @@
+/* ================================= */
+/* Global / Common Styles */
+/* ================================= */
+
+/* Reset and base styles for the entire app */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background-color: rgb(255, 255, 255);
+  background-image: url('data:image/svg+xml;charset=UTF-8,%3Csvg xmlns%3D%22http://www.w3.org/2000/svg%22 width%3D%224%22 height%3D%224%22%3E%3Ccircle cx%3D%222%22 cy%3D%222%22 r%3D%220.5%22 fill%3D%22%23d1d5db%22/%3E%3C/svg%3E');
+  background-repeat: repeat;
+  background-size: 4px 4px;
+  width: 380px;
+  max-height: 600px;
+  margin: 0;
+  padding: 12px;
+  overflow-y: auto;
+  color: #1a202c; /* Text color */
+}
+
+#root {
+  height: 100%;
+  max-height: 570px;
+  overflow-y: auto;
+  background-color: rgba(255, 255, 255, 1);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.1),
+    0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* ================================= */
+/* Alert styles */
+/* ================================= */
+.alert {
+  position: relative;
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: flex-start;
+  font-size: 14px;
+  color: #1a202c;
+}
+
+.alert .icon {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.alert-content {
+  flex: 1;
+}
+
+.alert-title {
+  font-weight: 500;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.alert-description {
+  font-weight: 300;
+  margin: 0;
+  font-size: 13px;
+}
+
+/* Alert variants */
+.alert-success {
+  background-color: rgb(220, 252, 231);
+  border: 1px solid rgb(34, 197, 94);
+  color: rgb(22, 163, 74);
+}
+
+.alert-error {
+  background-color: rgb(254, 242, 242);
+  border: 1px solid rgb(239, 68, 68);
+  color: rgb(185, 28, 28);
+}
+
+.alert-info {
+  background-color: rgb(239, 246, 255);
+  border: 1px solid rgb(59, 130, 246);
+  color: rgb(37, 99, 235);
+}
+
+.alert-warning {
+  background-color: rgb(255, 247, 237);
+  border: 1px solid rgb(251, 146, 60);
+  color: rgb(234, 88, 12);
+}
+
+/* ================================= */
+/* Base button styles */
+/* ================================= */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  min-width: 80px;
+  max-width: 160px;
+  width: fit-content;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  color: white;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.button svg {
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  flex-shrink: 0;
+  stroke: currentColor;
+  fill: none;
+}
+
+/* ================================= */
+/* Icon styles */
+/* ================================= */
+.icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+  stroke: currentColor;
+  fill: none;
+  flex-shrink: 0;
+}
+
+.icon.user {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+.icon.sia {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+/* ================================= */
+/* Dark theme overrides (global) */
+/* ================================= */
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: #1e1e1e;
+    background-image: url('data:image/svg+xml;charset=UTF-8,%3Csvg xmlns%3D%22http://www.w3.org/2000/svg%22 width%3D%224%22 height%3D%224%22%3E%3Ccircle cx%3D%222%22 cy%3D%222%22 r%3D%220.5%22 fill%3D%22%23555555%22/%3E%3C/svg%3E');
+    color: #f0f0f0;
+  }
+
+  #root {
+    background-color: #2e2e2e;
+    box-shadow:
+      0 1px 3px rgba(0, 0, 0, 0.5),
+      0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  .alert {
+    color: #ffffff;
+  }
+
+  .alert .icon {
+    stroke: #ffffff;
+  }
+
+  .alert-success {
+    background-color: #2e7d32;
+    border: 1px solid #66bb6a;
+  }
+
+  .alert-error {
+    background-color: #b71c1c;
+    border: 1px solid #e57373;
+  }
+
+  .alert-info {
+    background-color: #1565c0;
+    border: 1px solid #64b5f6;
+  }
+
+  .alert-warning {
+    background-color: #653208;
+    border: 1px solid #fb923c;
+  }
+
+  .button {
+    color: #f0f0f0;
+    background-color: #4a4a4a;
+  }
+
+  .button:hover {
+    background-color: #5a5a5a;
+  }
+
+  .icon {
+    stroke: #f0f0f0;
+  }
+}
