@@ -1,35 +1,22 @@
-/**
- * Utility class for encoding and decoding CBOR data, specifically tailored for WebAuthn operations.
- */
+// NOTE: This CBOR implementation is specifically tailored for WebAuthn operations,
+// providing only the necessary subset for authenticator tasks and COSE key support (EC2, RSA, OKP).
+
+// Encode and decode CBOR data for WebAuthn operations.
 export class WebAuthnCBOR {
-  /**
-   * Encodes a JavaScript value into CBOR format.
-   * @param value - The value to encode.
-   * @returns A Uint8Array containing the CBOR-encoded data.
-   */
+  // Convert JavaScript value to CBOR format and return as Uint8Array.
   static encode(value: any): Uint8Array {
     const encoder = new CBORWriter();
     encoder.write(value);
     return encoder.getResult();
   }
 
-  /**
-   * Decodes CBOR data into a JavaScript value.
-   * @param data - The CBOR data to decode.
-   * @returns The decoded JavaScript value.
-   */
+  // Parse CBOR data into JavaScript value.
   static decode(data: ArrayBuffer | Uint8Array): any {
     const decoder = new CBORReader(data);
     return decoder.read();
   }
 
-  /**
-   * Creates a CBOR-encoded COSE key for EC2 (Elliptic Curve) keys.
-   * @param x - The x-coordinate of the public key.
-   * @param y - The y-coordinate of the public key.
-   * @param alg - The algorithm identifier.
-   * @returns A Uint8Array containing the CBOR-encoded COSE key.
-   */
+  // Create CBOR-encoded COSE key for EC2 (Elliptic Curve) using x, y coordinates and algorithm identifier.
   static createEC2COSEKey(
     x: Uint8Array,
     y: Uint8Array,
@@ -45,13 +32,7 @@ export class WebAuthnCBOR {
     return WebAuthnCBOR.encode(coseKey);
   }
 
-  /**
-   * Creates a CBOR-encoded COSE key for RSA keys.
-   * @param n - The modulus of the public key.
-   * @param e - The exponent of the public key.
-   * @param alg - The algorithm identifier.
-   * @returns A Uint8Array containing the CBOR-encoded COSE key.
-   */
+  // Create CBOR-encoded COSE key for RSA using modulus (n), exponent (e), and algorithm identifier.
   static createRSACOSEKey(
     n: Uint8Array,
     e: Uint8Array,
@@ -65,15 +46,32 @@ export class WebAuthnCBOR {
     ]);
     return WebAuthnCBOR.encode(coseKey);
   }
+
+  // Create CBOR-encoded COSE key for OKP (Octet Key Pair, e.g., Ed25519) using public key bytes and algorithm identifier.
+  static createOKPCOSEKey(
+    x: Uint8Array,
+    alg: number
+  ): Uint8Array {
+    // According to COSE and IANA references, an Ed25519 key can be represented with:
+    // kty (1) = 1 (OKP),
+    // 3 = alg (often -8 for Ed25519),
+    // -1 = crv (6 for Ed25519),
+    // -2 = x (the raw public key bytes).
+    const coseKey = new Map<number, any>([
+      [1, 1],    // kty: OKP
+      [3, alg],  // alg: -8 for Ed25519
+      [-1, 6],   // crv = 6 (Ed25519)
+      [-2, x],   // x-coordinate (public key)
+    ]);
+    return WebAuthnCBOR.encode(coseKey);
+  }
 }
 
 /* ================================================
    CBOR Writer Class
 =============================================== */
 
-/**
- * Class for encoding data into CBOR format.
- */
+// Handle encoding data into CBOR format.
 class CBORWriter {
   private static readonly textEncoder = new TextEncoder();
   private data: Uint8Array;
@@ -85,18 +83,12 @@ class CBORWriter {
     this.data = new Uint8Array(initialCapacity);
   }
 
-  /**
-   * Gets the result of the encoding operation.
-   * @returns A Uint8Array containing the CBOR-encoded data.
-   */
+  // Return the final CBOR-encoded data as Uint8Array.
   getResult(): Uint8Array {
     return this.data.subarray(0, this.size);
   }
 
-  /**
-   * Writes a value into the CBOR encoder.
-   * @param value - The value to encode.
-   */
+  // Encode a value into the CBOR writer based on its type.
   write(value: any): void {
     if (value === false) {
       this.writeByte(0xf4); // False
@@ -157,9 +149,9 @@ class CBORWriter {
 
   private encodeMapFromMap(map: Map<any, any>): void {
     this.encodeMajorType(5, map.size);
-    for (const [key, value] of map) {
+    for (const [key, val] of map) {
       this.write(key);
-      this.write(value);
+      this.write(val);
     }
   }
 
@@ -177,11 +169,6 @@ class CBORWriter {
     }
   }
 
-  /**
-   * Encodes a positive integer using the appropriate major type.
-   * @param type - The major type (0 for positive integers, 1 for negative integers).
-   * @param value - The integer value to encode.
-   */
   private encodeMajorType(type: number, value: number): void {
     if (value < 24) {
       this.writeByte((type << 5) | value);
@@ -252,9 +239,7 @@ class CBORWriter {
    CBOR Reader Class
 =============================================== */
 
-/**
- * Class for decoding CBOR data into JavaScript values.
- */
+// Decode CBOR data into JavaScript values.
 class CBORReader {
   private static readonly textDecoder = new TextDecoder();
   private data: Uint8Array;
@@ -266,10 +251,6 @@ class CBORReader {
     this.length = this.data.length;
   }
 
-  /**
-   * Reads and decodes the next value from the CBOR data.
-   * @returns The decoded JavaScript value.
-   */
   read(): any {
     if (this.offset >= this.length) {
       throw new Error('No more data to read');

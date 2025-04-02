@@ -1,10 +1,10 @@
 import browser from 'webextension-polyfill';
-import { SigningAlgorithm, ES256, RS256 } from './algorithms';
-import { StoredCredential, RenterdSettings } from './types';
-import { logInfo, logError } from './logger';
-import { uploadPasskeyDirect } from './sia';
-import { base64UrlEncode, base64UrlDecode } from './base64url';
 
+import { Ed25519, ES256, RS256, SigningAlgorithm } from './algorithms';
+import { base64UrlDecode, base64UrlEncode } from './base64url';
+import { logError, logInfo } from './logger';
+import { uploadPasskeyDirect } from './sia';
+import { RenterdSettings, StoredCredential } from './types';
 
 // Web Crypto API
 const crypto = self.crypto;
@@ -12,32 +12,30 @@ const subtle = crypto.subtle;
 
 /* ================================================
    Helper Functions
-=============================================== */
+================================================ */
 
-/**
- * Determines if the current execution context is a background script.
- *
- * This function checks:
- * - Chrome: If the context is a Service Worker (`ServiceWorkerGlobalScope`).
- * - Firefox: If the context is a background page (`browser.runtime.getBackgroundPage`).
- *
- * @returns {boolean} `true` if the current context is a background script, otherwise `false`.
- */
+// Determines if the current execution context is a background script.
 function isBackgroundContext(): boolean {
   try {
-    // Check for Chrome Service Worker context
-    if (typeof ServiceWorkerGlobalScope !== 'undefined' && self instanceof ServiceWorkerGlobalScope) {
+    // Check for Chrome Service Worker context.
+    if (
+      typeof ServiceWorkerGlobalScope !== 'undefined' &&
+      self instanceof ServiceWorkerGlobalScope
+    ) {
       console.log('Chrome Service Worker detected');
       return true;
     }
 
-    // Check for Firefox background context
-    if (typeof browser !== 'undefined' && typeof browser.runtime.getBackgroundPage === 'function') {
+    // Check for Firefox background context.
+    if (
+      typeof browser !== 'undefined' &&
+      typeof browser.runtime.getBackgroundPage === 'function'
+    ) {
       console.log('Firefox Background detected');
       return true;
     }
 
-    // Not a background context
+    // Not a background context.
     console.log('Not a background context');
     return false;
   } catch (error) {
@@ -46,16 +44,14 @@ function isBackgroundContext(): boolean {
   }
 }
 
-/**
- * Sends a message to the background script or handles it directly if in the background context.
- */
+// Sends a message to the background script or handles it directly if in the background context.
 async function sendMessageToExtension(message: any): Promise<any> {
   try {
     if (isBackgroundContext()) {
-      // If we're in background context, handle the message directly
+      // If we're in background context, handle the message directly.
       return await handleMessageInBackground(message);
     } else {
-      // Otherwise send a message via browser API (webextension-polyfill)
+      // Otherwise send a message via browser API (webextension-polyfill).
       return await browser.runtime.sendMessage(message);
     }
   } catch (error) {
@@ -72,9 +68,7 @@ const DB_NAME = 'NydiaDB';
 const DB_VERSION = 3;
 const STORE_NAME = 'storedCredentials';
 
-/**
- * Opens the IndexedDB database.
- */
+// Opens the IndexedDB database.
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -98,7 +92,7 @@ function openDatabase(): Promise<IDBDatabase> {
         console.log('Using existing object store:', STORE_NAME);
       }
 
-      // Create indexes if they don't exist
+      // Create indexes if they don't exist.
       if (!objectStore.indexNames.contains('credentialId')) {
         objectStore.createIndex('credentialId', 'credentialId', { unique: true });
         console.log('Created credentialId index');
@@ -108,7 +102,7 @@ function openDatabase(): Promise<IDBDatabase> {
         console.log('Created rpId index');
       }
 
-      // Handle settings store
+      // Handle settings store.
       if (!db.objectStoreNames.contains('settings')) {
         db.createObjectStore('settings', { keyPath: 'id' });
         console.log('Created settings store');
@@ -131,9 +125,7 @@ function openDatabase(): Promise<IDBDatabase> {
    Settings Management
 ================================================ */
 
-/**
- * Saves the settings to the IndexedDB.
- */
+// Saves the settings to the IndexedDB.
 export async function saveSettings(settings: RenterdSettings): Promise<void> {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
@@ -153,9 +145,7 @@ export async function saveSettings(settings: RenterdSettings): Promise<void> {
   });
 }
 
-/**
- * Retrieves the settings from the IndexedDB.
- */
+// Retrieves the settings from the IndexedDB.
 export async function getSettings(): Promise<RenterdSettings | null> {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
@@ -178,9 +168,7 @@ export async function getSettings(): Promise<RenterdSettings | null> {
    Stored Credential Management
 ================================================ */
 
-/**
- * Saves a StoredCredential to the IndexedDB.
- */
+// Saves a StoredCredential to the IndexedDB.
 export async function saveStoredCredential(storedCredential: StoredCredential): Promise<void> {
   if (!storedCredential.creationTime) {
     storedCredential.creationTime = Date.now();
@@ -204,10 +192,10 @@ export async function saveStoredCredential(storedCredential: StoredCredential): 
   });
 }
 
-/**
- * Retrieves a StoredCredential by credentialId.
- */
-async function getStoredCredentialByCredentialId(credentialId: string): Promise<StoredCredential | undefined> {
+// Retrieves a StoredCredential by credentialId.
+async function getStoredCredentialByCredentialId(
+  credentialId: string,
+): Promise<StoredCredential | undefined> {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readonly');
@@ -226,9 +214,7 @@ async function getStoredCredentialByCredentialId(credentialId: string): Promise<
   });
 }
 
-/**
- * Retrieves all StoredCredentials from the IndexedDB.
- */
+// Retrieves all StoredCredentials from the IndexedDB.
 export async function getAllStoredCredentialsFromDB(): Promise<StoredCredential[]> {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
@@ -247,12 +233,10 @@ export async function getAllStoredCredentialsFromDB(): Promise<StoredCredential[
   });
 }
 
-/**
- * Finds a StoredCredential based on options and an optional selectedCredentialId.
- */
+// Finds a StoredCredential based on options and an optional selectedCredentialId.
 async function findStoredCredential(
   options: any,
-  selectedCredentialId?: string
+  selectedCredentialId?: string,
 ): Promise<StoredCredential | undefined> {
   const db = await openDatabase();
 
@@ -268,15 +252,18 @@ async function findStoredCredential(
       const rpId = options.rpId || new URL(options.origin).hostname;
 
       if (selectedCredentialId) {
-        // Find by selectedCredentialId
+        // Find by selectedCredentialId.
         matchingCredential = storedCredentials.find(
-          (cred) => cred.credentialId === selectedCredentialId && cred.rpId === rpId
+          (cred) => cred.credentialId === selectedCredentialId && cred.rpId === rpId,
         );
         if (matchingCredential) {
-          logInfo('Matching credential found by selectedCredentialId:', matchingCredential.credentialId);
+          logInfo(
+            'Matching credential found by selectedCredentialId:',
+            matchingCredential.credentialId,
+          );
         }
       } else if (options.allowCredentials && options.allowCredentials.length > 0) {
-        // Find by allowed credentials
+        // Find by allowed credentials.
         for (const allowedCred of options.allowCredentials) {
           const credentialIdEncoded =
             typeof allowedCred.id === 'string'
@@ -284,7 +271,7 @@ async function findStoredCredential(
               : base64UrlEncode(new Uint8Array(allowedCred.id));
 
           matchingCredential = storedCredentials.find(
-            (cred) => cred.credentialId === credentialIdEncoded && cred.rpId === rpId
+            (cred) => cred.credentialId === credentialIdEncoded && cred.rpId === rpId,
           );
 
           if (matchingCredential) {
@@ -293,7 +280,7 @@ async function findStoredCredential(
           }
         }
       } else {
-        // Find by rpId if allowCredentials is not provided
+        // Find by rpId if allowCredentials is not provided.
         matchingCredential = storedCredentials.find((cred) => cred.rpId === rpId);
         if (matchingCredential) {
           logInfo('Credential found by rpId:', matchingCredential.credentialId);
@@ -315,9 +302,7 @@ async function findStoredCredential(
   });
 }
 
-/**
- * Updates the counter of a StoredCredential.
- */
+// Updates the counter of a StoredCredential.
 export async function updateCredentialCounter(credentialId: string): Promise<void> {
   const db = await openDatabase();
 
@@ -356,14 +341,11 @@ export async function updateCredentialCounter(credentialId: string): Promise<voi
   });
 }
 
-
 /* ================================================
    Messaging in Background Context
 ================================================ */
 
-/**
- * Handles messages directly in the background script.
- */
+// Handles messages directly in the background script.
 export async function handleMessageInBackground(message: any): Promise<any> {
   switch (message.type) {
     case 'saveStoredCredential': {
@@ -371,15 +353,13 @@ export async function handleMessageInBackground(message: any): Promise<any> {
       return { status: 'success' };
     }
     case 'getStoredCredential': {
-      const storedCredential = await getStoredCredentialByCredentialId(
-        message.credentialId
-      );
+      const storedCredential = await getStoredCredentialByCredentialId(message.credentialId);
       return storedCredential || { error: 'Credential not found' };
     }
     case 'findCredential': {
       const foundCredential = await findStoredCredential(
         message.options,
-        message.selectedCredentialId
+        message.selectedCredentialId,
       );
       return foundCredential || { error: 'Credential not found' };
     }
@@ -446,9 +426,7 @@ export function getMemoryStore(): MemoryStore {
    Utility Functions
 ================================================ */
 
-/**
- * Creates a unique identifier based on rpId and credentialId.
- */
+// Creates a unique identifier based on rpId and credentialId.
 export async function createUniqueId(rpId: string, credentialId: string): Promise<string> {
   const combinedString = `${rpId}:${credentialId}`;
   const encoder = new TextEncoder();
@@ -465,9 +443,7 @@ export async function createUniqueId(rpId: string, credentialId: string): Promis
    Private Key Management
 ================================================ */
 
-/**
- * Saves the private key and related information.
- */
+// Saves the private key and related information.
 export async function savePrivateKey(
   credentialId: Uint8Array,
   rpId: string,
@@ -476,21 +452,21 @@ export async function savePrivateKey(
   cosePublicKey: Uint8Array,
   publicKeyAlgorithm: number,
   userIdHash: string,
-  userName?: string
+  userName?: string,
 ): Promise<void> {
   logInfo('Saving private key');
 
   try {
-    // Export private key in PKCS#8 format
+    // Export private key in PKCS#8 format.
     const privateKeyExported = await subtle.exportKey('pkcs8', privateKey);
     logInfo('Private key exported successfully');
 
-    // Encode private key and credentialId in base64url
+    // Encode private key and credentialId in base64url.
     const privateKeyBase64 = base64UrlEncode(new Uint8Array(privateKeyExported));
     const credentialIdEncoded = base64UrlEncode(credentialId);
     const uniqueId = await createUniqueId(rpId, credentialIdEncoded);
 
-    // Create StoredCredential object
+    // Create StoredCredential object.
     const storedCredential: StoredCredential = {
       uniqueId,
       credentialId: credentialIdEncoded,
@@ -505,7 +481,7 @@ export async function savePrivateKey(
       creationTime: Date.now(),
     };
 
-    // Save StoredCredential via extension
+    // Save StoredCredential via extension.
     const response = await sendMessageToExtension({
       type: 'saveStoredCredential',
       storedCredential,
@@ -522,10 +498,10 @@ export async function savePrivateKey(
   }
 }
 
-/**
- * Loads the private key and related information.
- */
-export async function loadPrivateKey(credentialId: string): Promise<[CryptoKey, SigningAlgorithm, number]> {
+// Loads the private key and related information.
+export async function loadPrivateKey(
+  credentialId: string,
+): Promise<[CryptoKey, SigningAlgorithm, number]> {
   logInfo('Loading private key', { credentialId });
 
   try {
@@ -540,28 +516,37 @@ export async function loadPrivateKey(credentialId: string): Promise<[CryptoKey, 
     }
 
     const storedCredential = storedCredentialResponse as StoredCredential;
-
-    // Decode private key
     const privateKeyBuffer = base64UrlDecode(storedCredential.privateKey);
 
-    // Determine algorithm
-    const algorithm =
-      storedCredential.publicKeyAlgorithm === -7 ? new ES256() : new RS256();
-    const keyType = algorithm instanceof ES256 ? 'ECDSA' : 'RSASSA-PKCS1-v1_5';
+    let algorithm: SigningAlgorithm;
+    let importParams: EcKeyImportParams | RsaHashedImportParams | Algorithm;
+    let keyType: string;
 
-    // Import private key
-    const importParams =
-      algorithm instanceof ES256
-        ? { name: keyType, namedCurve: 'P-256' }
-        : { name: keyType, hash: 'SHA-256' };
+    // Check which algorithm to use.
+    if (storedCredential.publicKeyAlgorithm === -7) {
+      // ES256
+      algorithm = new ES256();
+      keyType = 'ECDSA';
+      importParams = { name: 'ECDSA', namedCurve: 'P-256' };
+    } else if (storedCredential.publicKeyAlgorithm === -257) {
+      // RS256
+      algorithm = new RS256();
+      keyType = 'RSASSA-PKCS1-v1_5';
+      importParams = { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' };
+    } else if (storedCredential.publicKeyAlgorithm === -8) {
+      // Ed25519
+      algorithm = new Ed25519();
+      keyType = 'Ed25519';
+      // For Ed25519 in Firefox, this is typically enough:
+      importParams = { name: 'Ed25519' };
+    } else {
+      throw new Error('Unsupported algorithm');
+    }
 
-    const privateKey = await subtle.importKey(
-      'pkcs8',
-      privateKeyBuffer,
-      importParams,
-      false,
-      ['sign']
-    );
+    // Import private key.
+    const privateKey = await subtle.importKey('pkcs8', privateKeyBuffer, importParams, false, [
+      'sign',
+    ]);
 
     logInfo('Private key loaded successfully from extension', { algorithm: keyType });
 
@@ -572,12 +557,10 @@ export async function loadPrivateKey(credentialId: string): Promise<[CryptoKey, 
   }
 }
 
-/**
- * Finds a credential based on options and an optional selectedCredentialId.
- */
+// Finds a credential based on options and an optional selectedCredentialId.
 export async function findCredential(
   options: any,
-  selectedCredentialId?: string
+  selectedCredentialId?: string,
 ): Promise<StoredCredential> {
   logInfo('Searching for credential via extension');
 
@@ -604,9 +587,7 @@ export async function findCredential(
   }
 }
 
-/**
- * Retrieves all stored credentials via extension.
- */
+// Retrieves all stored credentials via extension.
 export async function getAllStoredCredentials(): Promise<StoredCredential[]> {
   logInfo('Requesting all stored credentials via extension');
 
@@ -616,13 +597,18 @@ export async function getAllStoredCredentials(): Promise<StoredCredential[]> {
     });
 
     if (storedCredentialsResponse && storedCredentialsResponse.error) {
-      logError('Error retrieving stored credentials via extension', storedCredentialsResponse.error);
+      logError(
+        'Error retrieving stored credentials via extension',
+        storedCredentialsResponse.error,
+      );
       throw new Error('Error retrieving stored credentials');
     }
 
     const storedCredentials = storedCredentialsResponse as StoredCredential[];
 
-    logInfo(`Retrieved ${storedCredentials.length} stored credentials via extension`);
+    logInfo(
+      `Retrieved ${storedCredentials.length} stored credentials via extension`,
+    );
     return storedCredentials;
   } catch (error) {
     logError('Error getting all stored credentials from extension', error);
