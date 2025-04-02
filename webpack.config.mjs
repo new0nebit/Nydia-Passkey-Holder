@@ -20,8 +20,13 @@ export default (env, argv) => {
       background: './src/background.ts',
       dispatcher: './src/dispatcher.ts',
       menu: {
-        import: ['./src/menu.ts', './src/styles.css'],
+        import: [
+          './src/menu.ts',
+          './src/settings.ts',
+          './src/styles/main.css'
+        ],
       },
+      popup: './src/popup.ts'
     },
     module: {
       rules: [
@@ -44,7 +49,13 @@ export default (env, argv) => {
           test: /\.css$/,
           use: [
             MiniCssExtractPlugin.loader,
-            'css-loader',
+            {
+              loader: 'css-loader',
+              options: {
+                import: true,
+                importLoaders: 1,
+              }
+            },
           ],
         },
       ],
@@ -57,8 +68,11 @@ export default (env, argv) => {
       path: path.resolve(process.cwd(), outputDir),
     },
     plugins: [
+      // Modify MiniCssExtractPlugin to create popup.css and menu.css
       new MiniCssExtractPlugin({
-        filename: 'styles.css',
+        filename: ({ chunk }) => {
+          return chunk.name === 'popup' ? 'popup.css' : 'menu.css';
+        },
       }),
       new CopyWebpackPlugin({
         patterns: [
