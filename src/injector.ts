@@ -1,13 +1,14 @@
+// Check if Credential Management API is available
 (function () {
-  // Preserve original methods
+  if (!('credentials' in navigator)) {
+    return;
+  }
+
+  // Preserve original methods.
   const originalCreate = navigator.credentials.create.bind(navigator.credentials);
   const originalGet = navigator.credentials.get.bind(navigator.credentials);
 
-  /**
-   * Overrides navigator.credentials.create to intercept WebAuthn credential creation.
-   * @param {CredentialCreationOptions} options - The options for credential creation.
-   * @returns {Promise<Credential>} - A promise that resolves to a Credential object.
-   */
+  // Override credentials.create to intercept WebAuthn credential creation.
   navigator.credentials.create = async function (options) {
     if (!options || !('publicKey' in options)) {
       // If not a WebAuthn operation, use the original method
@@ -34,7 +35,7 @@
 
       window.addEventListener('message', messageHandler);
 
-      // Remove the signal property if it exists, as we handle cancellation through our own abort mechanism
+      // Remove the signal property if it exists, as we handle cancellation through our own abort mechanism.
       const optionsWithoutSignal = { ...options };
       delete optionsWithoutSignal.signal;
 
@@ -45,11 +46,7 @@
     });
   };
 
-  /**
-   * Overrides navigator.credentials.get to intercept WebAuthn credential retrieval.
-   * @param {CredentialRequestOptions} options - The options for credential retrieval.
-   * @returns {Promise<Credential>} - A promise that resolves to a Credential object.
-   */
+  // Overrides navigator.credentials.get to intercept WebAuthn credential retrieval.
   navigator.credentials.get = async function (options) {
     if (!options || !('publicKey' in options)) {
       // If not a WebAuthn operation, use the original method
@@ -76,13 +73,13 @@
 
       window.addEventListener('message', messageHandler);
 
-      // Remove the signal property if it exists, as we do not use it
+      // Remove the signal property if it exists, as we do not use it.
       const optionsWithoutSignal = { ...options };
       delete optionsWithoutSignal.signal;
 
       const serializedOptions = serializePublicKeyCredentialOptions(optionsWithoutSignal);
 
-      // Send a message to the content script
+      // Send a message to the content script.
       window.postMessage({ type: 'webauthn-get', options: serializedOptions }, '*');
     });
   };
@@ -91,11 +88,7 @@
      Helper Functions
   =============================================== */
 
-  /**
-   * Transforms the credential data received from the content script into a Credential object.
-   * @param {any} data - The credential data.
-   * @returns {PublicKeyCredential} - The transformed Credential object.
-   */
+  // Transform credential data from content script into a Credential object.
   function transformCredential(data) {
     console.log('[Injector] Transforming credential:', data);
 
@@ -112,11 +105,7 @@
     return credential;
   }
 
-  /**
-   * Transforms the authenticator response data into an AuthenticatorResponse object.
-   * @param {any} response - The response data.
-   * @returns {AuthenticatorResponse} - The transformed response object.
-   */
+  // Transform authenticator response data into proper response object.
   function transformAuthenticatorResponse(response) {
     console.log('[Injector] Transforming authenticator response:', response);
 
@@ -127,7 +116,7 @@
         attestationObject: base64ToArrayBuffer(response.attestationObject),
       };
 
-      // Optional methods
+      // Add optional methods if data is available
       if (response.publicKeyDER) {
         const publicKeyDERArrayBuffer = base64ToArrayBuffer(response.publicKeyDER);
         attestationResponse.getPublicKey = function () {
@@ -151,13 +140,13 @@
         };
         console.log(
           '[Injector] Added getPublicKeyAlgorithm method to attestationResponse:',
-          publicKeyAlgorithm
+          publicKeyAlgorithm,
         );
       }
 
       // Add getTransports() method
       attestationResponse.getTransports = function () {
-        return ['internal', 'hybrid']; // Adjust transport types as needed
+        return ['internal', 'hybrid'];
       };
       console.log('[Injector] Added getTransports method to attestationResponse');
 
@@ -174,11 +163,7 @@
     }
   }
 
-  /**
-   * Converts a base64url-encoded string to an ArrayBuffer.
-   * @param {string} base64 - The base64url-encoded string.
-   * @returns {ArrayBuffer} - The resulting ArrayBuffer.
-   */
+  // Converts a base64url-encoded string to an ArrayBuffer.
   function base64ToArrayBuffer(base64) {
     const binaryString = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
     const len = binaryString.length;
@@ -189,11 +174,7 @@
     return bytes.buffer;
   }
 
-  /**
-   * Converts an ArrayBuffer to a base64url-encoded string.
-   * @param {ArrayBuffer} buffer - The ArrayBuffer to encode.
-   * @returns {string} - The base64url-encoded string.
-   */
+  // Converts an ArrayBuffer to a base64url-encoded string.
   function arrayBufferToBase64Url(buffer) {
     const bytes = new Uint8Array(buffer);
     let binary = '';
@@ -203,24 +184,15 @@
     return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
   }
 
-  /**
-   * Serializes PublicKeyCredential options by converting ArrayBuffers to base64url strings.
-   * @param {any} options - The options to serialize.
-   * @returns {any} - The serialized options.
-   */
+  // Serializes PublicKeyCredential options by converting ArrayBuffers to base64url strings.
   function serializePublicKeyCredentialOptions(options) {
     const serializedOptions = { ...options };
 
     if (options.publicKey) {
       serializedOptions.publicKey = { ...options.publicKey };
 
-      if (
-        options.publicKey.challenge &&
-        options.publicKey.challenge instanceof ArrayBuffer
-      ) {
-        serializedOptions.publicKey.challenge = arrayBufferToBase64Url(
-          options.publicKey.challenge
-        );
+      if (options.publicKey.challenge && options.publicKey.challenge instanceof ArrayBuffer) {
+        serializedOptions.publicKey.challenge = arrayBufferToBase64Url(options.publicKey.challenge);
       }
 
       if (
@@ -229,9 +201,7 @@
         options.publicKey.user.id instanceof ArrayBuffer
       ) {
         serializedOptions.publicKey.user = { ...options.publicKey.user };
-        serializedOptions.publicKey.user.id = arrayBufferToBase64Url(
-          options.publicKey.user.id
-        );
+        serializedOptions.publicKey.user.id = arrayBufferToBase64Url(options.publicKey.user.id);
       }
 
       if (options.publicKey.excludeCredentials) {
@@ -239,7 +209,7 @@
           (cred) => ({
             ...cred,
             id: arrayBufferToBase64Url(cred.id),
-          })
+          }),
         );
       }
 
@@ -248,7 +218,7 @@
           (cred) => ({
             ...cred,
             id: arrayBufferToBase64Url(cred.id),
-          })
+          }),
         );
       }
     }
