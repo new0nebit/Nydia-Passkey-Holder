@@ -1,0 +1,13 @@
+/* IMPORTANT: CSS import order matters.
+ * Later styles override earlier ones with the same specificity.
+ * Keep base/common styles first, then component styles, then overrides.
+ */
+
+/* Base styles used throughout the app */
+@import 'common.css';
+
+/* Component-specific styles that may override common styles */
+@import 'menu.css';
+
+/* Settings page styles (loaded last to have highest precedence) */
+@import 'settings.css';

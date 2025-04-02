@@ -1,0 +1,107 @@
+/* ================================= */
+/* Renterd settings */
+/* ================================= */
+
+#settings-form {
+  background-color: white;
+  border-radius: 8px;
+  padding: 12px 12px 0 8px;
+  margin-bottom: 8px;
+}
+
+.field-container {
+  margin-bottom: 12px;
+}
+
+.field-container:last-child {
+  margin-bottom: 4px;
+}
+
+.field-container label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.field-container input {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 14px;
+  border: 1px solid rgb(209, 213, 219);
+  border-radius: 6px;
+}
+
+.field-container input:focus {
+  outline: none;
+  border-color: rgb(59, 130, 246);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.button-indigo {
+  background-color: rgb(79, 70, 229);
+}
+
+.button-indigo:hover {
+  background-color: rgb(67, 56, 202);
+}
+
+.button-blue {
+  background-color: rgb(59, 130, 246);
+}
+
+.button-blue:hover {
+  background-color: rgb(37, 99, 235);
+}
+
+.button-gray {
+  background-color: rgb(107, 114, 128);
+}
+
+.button-gray:hover {
+  background-color: rgb(75, 85, 99);
+}
+
+.button-container {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+/* ================================= */
+/* Dark theme */
+/* ================================= */
+@media (prefers-color-scheme: dark) {
+  #settings-form {
+    background-color: #2e2e2e;
+  }
+
+  .field-container label {
+    color: #f0f0f0;
+  }
+
+  .field-container input {
+    background-color: #1e1e1e;
+    color: #f0f0f0;
+    border: 1px solid #555555;
+  }
+
+  .field-container input:focus {
+    border-color: #1976d2;
+    box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.3);
+  }
+
+  .button-indigo,
+  .button-blue,
+  .button-gray {
+    color: #f0f0f0;
+    background-color: #4a4a4a;
+  }
+
+  .button-indigo:hover,
+  .button-blue:hover,
+  .button-gray:hover {
+    background-color: #5a5a5a;
+  }
+}
