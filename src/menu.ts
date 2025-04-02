@@ -278,6 +278,17 @@ class Menu {
     passkeyList.parentElement?.insertBefore(headerContainer, passkeyList);
   }
 
+  // Extract the root domain
+  private getRootDomain(rpId: string): string {
+    const parts = rpId.toLowerCase().split('.');
+    // If there are more than two domain parts, we collect the last two parts
+    // For example, login.example.com -> example.com
+    if (parts.length > 2) {
+      return parts.slice(-2).join('.');
+    }
+    return rpId;
+  }
+
   // Create passkey list item
   private createPasskeyListItem(passkey: StoredCredential): HTMLLIElement {
     const listItem = document.createElement('li');
@@ -301,7 +312,8 @@ class Menu {
     siteInfo.className = 'site-info';
 
     const siteIcon = document.createElement('img');
-    siteIcon.src = `https://www.google.com/s2/favicons?domain=${passkey.rpId}&sz=64`;
+    // Use the root domain instead of the full rpId
+    siteIcon.src = `https://www.google.com/s2/favicons?domain=${this.getRootDomain(passkey.rpId)}&sz=64`;
     siteIcon.alt = passkey.rpId;
     siteIcon.className = 'site-icon';
 
