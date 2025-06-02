@@ -1,4 +1,4 @@
-import browser from 'webextension-polyfill';
+import browser from 'browser-api';
 
 import { Ed25519, ES256, RS256, SigningAlgorithm } from './algorithms';
 import { base64UrlDecode, base64UrlEncode } from './base64url';

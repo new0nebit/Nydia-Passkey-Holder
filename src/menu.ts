@@ -1,4 +1,4 @@
-import browser from 'webextension-polyfill';
+import browser from 'browser-api';
 
 import { icons } from './icons';
 import {
