@@ -1,7 +1,7 @@
-import browser from 'webextension-polyfill';
+import browser                                       from 'browser-api';
 
-import { base64UrlEncode, base64UrlToArrayBuffer } from './base64url';
-import { Account, WebAuthnOperationType } from './types';
+import { base64UrlEncode, base64UrlToArrayBuffer }   from './base64url';
+import { Account, WebAuthnOperationType }            from './types';
 
 // Define global popup interface for cross-script communication between content script and injected page script.
 declare global {
