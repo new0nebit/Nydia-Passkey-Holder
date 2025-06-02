@@ -26,7 +26,7 @@
   Users can hold their passkeys locally with completely private decentralized backup.
 </p>
 
-## Installation
+## Build instructions
 
 1. Clone the repository:
 ```bash
@@ -46,19 +46,22 @@ npm run build
 4. This will create a build `extension` directory with unpacked extension for Chrome and Firefox browsers.
 
 5. Load the extension in browser:
-  - For Chrome:
+  - Chrome:
     - Navigate to `chrome://extensions`
     - Enable "Developer mode"
     - Click "Load unpacked" and select the `extension/chrome` directory
 
-  - For Firefox:
+  - Firefox:
     - Navigate to `about:debugging#/runtime/this-firefox`
     - Click "Load Temporary Add-on"
     - Select any file from the `extension/firefox` directory
 
+> [!NOTE]
+> A version for Safari is available <a href="https://github.com/new0nebit/Nydia-For-Safari">here</a>.
+
 ## Configuration
 
-### Sia Renterd Setup
+#### Sia Renterd Setup
 
 1. Install and configure `renterd` following the [official documentation](https://docs.sia.tech/renting/setting-up-renterd).
 2. In the extension, configure your renterd settings:
@@ -73,6 +76,14 @@ npm run build
 
 ## Security Notes
 
-- Passkeys are stored locally using browser encryption
-- No passkey data is transmitted to third-party servers
-- The extension requires minimal permissions
+- Passkeys are stored locally using browser encryption.
+- No passkey data is transmitted to third-party servers.
+- The extension requires minimal permissions.
+
+<br>
+
+> [!CAUTION]
+> The Nydia Passkey Holder is in an early stage of active development.<br>
+> Passkey registration and authentication through Nydia may not be supported on all websites yet.<br>
+> Future updates may introduce compatibility changes that could affect existing stored credentials.<br>
+> Handle with care.
