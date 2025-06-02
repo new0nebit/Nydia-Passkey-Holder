@@ -1,17 +1,16 @@
-import { Ed25519, ES256, RS256, SigningAlgorithm } from './algorithms';
-import { base64UrlDecode, base64UrlEncode } from './base64url';
-import { WebAuthnCBOR } from './cbor';
-import { logError, logInfo } from './logger';
+import { Ed25519, ES256, RS256, SigningAlgorithm }   from './algorithms';
+import { base64UrlDecode, base64UrlEncode }          from './base64url';
+import { WebAuthnCBOR }                              from './cbor';
+import { logError, logInfo }                         from './logger';
 import { 
   createUniqueId,
   findCredential,
   getAllStoredCredentials,
-  getMemoryStore,
   loadPrivateKey,
   savePrivateKey,
   updateCredentialCounter
-} from './store';
-import { Account } from './types';
+}                                                   from './store';
+import { Account }                                  from './types';
 
 // Web Crypto API
 const crypto = self.crypto;
@@ -32,10 +31,6 @@ function logAuth(message: string, data?: any): void {
     console.log(`[Authenticator] ${message}`);
   }
 }
-
-/* ================================================
-   Helper Functions
-================================================ */
 
 // Hash data using SHA-256 algorithm.
 async function sha256(data: ArrayBuffer | Uint8Array): Promise<ArrayBuffer> {
@@ -133,10 +128,6 @@ function bufferToHex(buffer: Uint8Array): string {
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }
-
-/* ================================================
-   Main Functions
-================================================ */
 
 // Create a new credential.
 export async function createCredential(options: any): Promise<any> {
@@ -333,11 +324,6 @@ export async function createCredential(options: any): Promise<any> {
 
     logAuth('Credential created successfully');
     logAuth('Credential:', createResponse);
-
-    // Save attestation response in memory
-    const memoryStore = getMemoryStore();
-    memoryStore.saveAttestationResponse(createResponse);
-    logAuth('Attestation response saved to MemoryStore');
 
     return createResponse;
   } catch (error: any) {
