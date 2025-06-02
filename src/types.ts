@@ -6,13 +6,14 @@ export interface StoredCredential {
   rpId: string;
   userIdHash: string;
   privateKey: string;
+  iv: string;
   userHandle: string;
   publicKey: string;
   publicKeyAlgorithm: number;
   counter: number;
   userName?: string;
-  isSynced?: boolean;
-  creationTime?: number;
+  creationTime: number;
+  isSynced: boolean;
 }
 
 export interface Account {
@@ -28,4 +29,11 @@ export interface RenterdSettings {
   serverAddress: string;
   serverPort: number;
   bucketName: string;
+}
+
+export interface EncryptedRecord {
+  uniqueId: string;
+  iv: string;
+  data: string;
+  isSynced: boolean;
 }

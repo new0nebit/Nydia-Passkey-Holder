@@ -1,646 +1,501 @@
-import browser from 'browser-api';
+import browser                              from 'browser-api';
 
-import { icons } from './icons';
+import { icons }                            from './icons';
 import {
   getSettings,
   setNotificationDisplayer,
   setOnSettingsComplete,
   showSettingsForm,
   validateSettings,
-} from './settings';
-import { getAllStoredCredentialsFromDB } from './store';
-import { StoredCredential } from './types';
+}                                          from './settings';
+import { getAllStoredCredentialsFromDB }   from './store';
+import { StoredCredential }                from './types';
 
-// Types for notifications
 type NotificationType = 'success' | 'error' | 'info' | 'warning';
 type ModalType = 'alert' | 'confirm' | 'prompt';
 
-export class Menu {
-  constructor() {
-    // Set up notification handler and callback for settings completion
-    setNotificationDisplayer({
-      showNotification: this.showNotification.bind(this),
-    });
-    setOnSettingsComplete(() => this.displayPasskeys());
+interface SyncUploadResult {
+  uploadedCount: number;
+  failedCount: number;
+  error: boolean;
+}
+interface SyncDownloadResult {
+  syncedCount: number;
+  failedCount: number;
+  empty: boolean;
+  error: boolean;
+}
 
-    document.addEventListener('DOMContentLoaded', async () => {
-      const root = document.getElementById('root');
-      if (!root) return;
+// IndexedDB
+const DB_NAME = 'NydiaDB';
+const DB_VERSION = 4;
+const STORE_NAME = 'storedCredentials';
 
-      await this.displayPasskeys();
-    });
+// Safely creates SVG element from string.
+function createSvgIcon(svgString: string): SVGElement {
+  const template = document.createElement('template');
+  template.innerHTML = svgString.trim();
+  const svg = template.content.querySelector('svg');
+
+  if (!svg) {
+    throw new Error('Invalid SVG: no <svg> element found');
   }
 
-  // Notification and modal methods
-  private showNotification(type: NotificationType, title: string, message: string): void {
-    // This is the same notification logic that can now be reused via setNotificationDisplayer
-    const notification = document.createElement('div');
-    notification.className = `alert alert-${type}`;
+  return svg.cloneNode(true) as SVGElement;
+}
 
-    const iconSvg =
-      type === 'success'
-        ? icons.check
-        : type === 'error'
-          ? icons.alert
-          : type === 'warning'
-            ? icons.warning
-            : icons.info;
+function create<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  classes: string[] = [],
+): HTMLElementTagNameMap[K] {
+  const el = document.createElement(tag);
+  if (classes.length) el.classList.add(...classes);
+  return el;
+}
 
-    notification.innerHTML = `
-      ${iconSvg}
-      <div class="alert-content">
-        <h5 class="alert-title">${title}</h5>
-        <div class="alert-description">
-          ${message}
-        </div>
-      </div>
-    `;
+// Allows only letters, digits, dash and dot. Fallback to 'invalid'.
+function sanitizeDomain(input: string): string {
+  const cleaned = input.toLowerCase().match(/[a-z0-9.-]+/)?.[0] ?? '';
+  return cleaned.length ? cleaned : 'invalid';
+}
 
-    const root = document.getElementById('root');
-    if (root) {
-      root.insertBefore(notification, root.firstChild);
-    }
+function createButton(
+  iconHtml: string | null,
+  label: string,
+  classes: string[],
+  handler: (btn: HTMLButtonElement) => void,
+): HTMLButtonElement {
+  const btn = create('button', classes) as HTMLButtonElement;
 
-    setTimeout(() => {
-      if (notification.parentNode) {
-        notification.parentNode.removeChild(notification);
-      }
-    }, 3000);
+  if (iconHtml) {
+    btn.append(createSvgIcon(iconHtml));
   }
 
-  private showModal(type: ModalType, title: string, message: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      const overlay = document.createElement('div');
-      overlay.className = 'modal-overlay';
+  const span = create('span');
+  span.textContent = label;
+  btn.append(span);
 
-      const iconSvg =
-        type === 'confirm' ? icons.question : type === 'alert' ? icons.info : icons.warning;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    handler(btn);
+  });
 
-      overlay.innerHTML = `
-        <div class="modal-content">
-          <div class="modal-header">
-            ${iconSvg}
-            <div>
-              <div class="modal-title">${title}</div>
-              <div class="modal-message">${message}</div>
-            </div>
-          </div>
-          <div class="modal-buttons">
-            ${
-              type === 'confirm'
-                ? `
-                    <button class="modal-cancel">Cancel</button>
-                    <button class="modal-confirm">Confirm</button>
-                  `
-                : `
-                    <button class="modal-confirm">OK</button>
-                  `
-            }
-          </div>
-        </div>
-      `;
+  return btn;
+}
 
-      document.body.appendChild(overlay);
+// Updates button label.
+function setButtonLabel(btn: HTMLButtonElement, text: string): void {
+  const span = btn.querySelector('span');
+  if (span) span.textContent = text;
+}
 
-      const confirmBtn = overlay.querySelector('.modal-confirm');
-      const cancelBtn = overlay.querySelector('.modal-cancel');
+// Notification banner.
+function notify(type: NotificationType, title: string, message: string): void {
+  const iconMap: Record<NotificationType, string> = {
+    success: icons.check,
+    error: icons.alert,
+    warning: icons.warning,
+    info: icons.info,
+  };
 
-      const cleanup = () => {
-        document.body.removeChild(overlay);
-      };
+  const alertBox = create('div', ['alert', `alert-${type}`]);
+  alertBox.append(createSvgIcon(iconMap[type]));
 
-      if (confirmBtn) {
-        confirmBtn.addEventListener('click', () => {
-          cleanup();
-          resolve(true);
-        });
-      }
+  const textWrap = create('div', ['alert-content']);
+  const h = create('h5', ['alert-title']);
+  h.textContent = title;
+  const desc = create('div', ['alert-description']);
+  desc.textContent = message;
+  textWrap.append(h, desc);
 
-      if (cancelBtn) {
-        cancelBtn.addEventListener('click', () => {
-          cleanup();
-          resolve(false);
-        });
-      }
-    });
-  }
+  alertBox.append(textWrap);
+  document.getElementById('root')?.prepend(alertBox);
+  setTimeout(() => alertBox.remove(), 3_000);
+}
 
-  // Display passkeys
-  async displayPasskeys() {
-    try {
-      const storedCredentials = await getAllStoredCredentialsFromDB();
+// Simple modal dialog.
+function modal(type: ModalType, title: string, message: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const iconMap: Record<ModalType, string> = {
+      alert: icons.info,
+      confirm: icons.question,
+      prompt: icons.warning,
+    };
 
-      // Sort by creation date (new on top):
-      storedCredentials.sort((a, b) => {
-        const aTime = a.creationTime ?? 0;
-        const bTime = b.creationTime ?? 0;
-        return bTime - aTime;
+    const overlay = create('div', ['modal-overlay']);
+
+    const content = create('div', ['modal-content']);
+    const header = create('div', ['modal-header']);
+    header.append(createSvgIcon(iconMap[type]));
+
+    const textWrap = create('div');
+    const titleEl = create('div', ['modal-title']);
+    titleEl.textContent = title;
+    const msgEl = create('div', ['modal-message']);
+    msgEl.textContent = message;
+    textWrap.append(titleEl, msgEl);
+    header.append(textWrap);
+
+    const btnWrap = create('div', ['modal-buttons']);
+    const okBtn = createButton(
+      null,
+      type === 'confirm' ? 'Confirm' : 'OK',
+      ['modal-confirm'],
+      () => {
+        overlay.remove();
+        resolve(true);
+      },
+    );
+    btnWrap.append(okBtn);
+
+    if (type === 'confirm') {
+      const cancelBtn = createButton(null, 'Cancel', ['modal-cancel'], () => {
+        overlay.remove();
+        resolve(false);
       });
+      btnWrap.prepend(cancelBtn);
+    }
 
-      const settings = await getSettings();
-      const passkeyList = document.getElementById('passkey-list');
+    content.append(header, btnWrap);
+    overlay.append(content);
+    document.body.append(overlay);
+  });
+}
 
-      if (passkeyList) {
-        const existingHeader = document.querySelector('.header-container');
-        if (existingHeader) {
-          existingHeader.remove();
-        }
+// Ensures index exists.
+function ensureIndex(store: IDBObjectStore, name: string, key: string, opts?: IDBIndexParameters) {
+  if (!store.indexNames.contains(name)) store.createIndex(name, key, opts);
+}
 
-        if (!document.querySelector('.header-container')) {
-          this.createSettingsButton(passkeyList);
-        }
+// Restores sync button to default.
+function resetSyncButton(btn: HTMLButtonElement): void {
+  btn.disabled = false;
+  btn.classList.remove('uploading');
+  btn.innerHTML = '';
+  btn.append(createSvgIcon(icons.sia));
+  const span = create('span');
+  span.textContent = 'Sync Passkeys';
+  btn.append(span);
+}
 
-        passkeyList.innerHTML = '';
+// Main menu class
+export class Menu {
+  private onboarding?: OnboardingController;
 
-        if (storedCredentials.length > 0) {
-          storedCredentials.forEach((passkey) => {
-            const listItem = this.createPasskeyListItem(passkey);
-            passkeyList.appendChild(listItem);
-          });
-        } else if (settings) {
-          const container = document.createElement('div');
-          container.classList.add('centered-container');
+  constructor() {
+    setNotificationDisplayer({ showNotification: notify });
+    setOnSettingsComplete(() => this.render());
+    document.addEventListener('DOMContentLoaded', () => void this.init());
+  }
 
-          const title = document.createElement('div');
-          title.classList.add('small-title');
-          title.textContent = 'Ready to Sync Passkeys';
+  private async init() {
+    const root = document.getElementById('root');
+    if (!root) return;
 
-          const subtitle = document.createElement('div');
-          subtitle.classList.add('small-subtitle');
-          subtitle.textContent = 'Connect to renterd server and retrieve passkeys';
+    if (localStorage.getItem('nydiaOnboardingDone') !== 'true') {
+      const { OnboardingController } = await import(
+        /* webpackChunkName: "onboarding" */ './onboarding'
+      );
+      this.onboarding = new OnboardingController(root);
+      return;
+    }
+    await this.render();
+  }
 
-          const buttonWrapper = document.createElement('div');
-          buttonWrapper.classList.add('flex-center');
+  private async render(): Promise<void> {
+    try {
+      const list = document.getElementById('passkey-list');
+      if (!list) return;
 
-          const button = document.createElement('button');
-          button.className = 'button button-sync button-gap';
-          button.innerHTML = `${icons.sia}<span>Sync Passkeys</span>`;
-          button.onclick = () => this.syncPasskeys(button);
+      const [credsRaw, settings] = await Promise.all([
+        getAllStoredCredentialsFromDB().catch(() => []),
+        getSettings(),
+      ]);
+      const creds = Array.isArray(credsRaw) ? credsRaw : [];
+      creds.sort((a, b) => (b.creationTime ?? 0) - (a.creationTime ?? 0));
 
-          buttonWrapper.appendChild(button);
-          container.appendChild(title);
-          container.appendChild(subtitle);
-          container.appendChild(buttonWrapper);
-          passkeyList.appendChild(container);
-        } else {
-          const container = document.createElement('div');
-          container.classList.add('centered-container');
+      if (!document.querySelector('.header-container')) this.buildHeader(list);
 
-          const title = document.createElement('div');
-          title.classList.add('small-title');
-          title.textContent = 'No Passkeys Found';
+      list.innerHTML = '';
 
-          const subtitle = document.createElement('div');
-          subtitle.classList.add('small-subtitle');
-          subtitle.textContent = 'Configure renterd settings to start syncing';
-
-          const buttonWrapper = document.createElement('div');
-          buttonWrapper.classList.add('flex-center');
-
-          const button = document.createElement('button');
-          button.className = 'button button-green button-gap';
-          button.innerHTML = `${icons.settings}<span>Renterd Settings</span>`;
-          button.onclick = () => showSettingsForm();
-
-          buttonWrapper.appendChild(button);
-          container.appendChild(title);
-          container.appendChild(subtitle);
-          container.appendChild(buttonWrapper);
-          passkeyList.appendChild(container);
-        }
+      if (creds.length) {
+        creds.forEach((c) => list.append(this.passkeyItem(c)));
+      } else if (settings) {
+        this.stateView(list, {
+          title: 'Ready to Sync Passkeys',
+          subtitle: 'Connect to renterd server and retrieve passkeys',
+          icon: icons.sia,
+          label: 'Sync Passkeys',
+          btnClass: 'button-sync',
+          action: (b) => this.sync(b),
+        });
+      } else {
+        this.stateView(list, {
+          title: 'No Passkeys Found',
+          subtitle: 'Configure renterd settings to start syncing',
+          icon: icons.settings,
+          label: 'Renterd Settings',
+          btnClass: 'button-green',
+          action: () => showSettingsForm(),
+        });
       }
-    } catch (error) {
-      console.error('Error displaying Passkeys:', error);
-      this.showNotification('error', 'Error!', 'Failed to load passkeys.');
+    } catch (e) {
+      console.error(e);
+      notify('error', 'Error', 'Failed to load passkeys.');
     }
   }
 
-  // Settings button
-  private createSettingsButton(passkeyList: HTMLElement) {
-    const headerContainer = document.createElement('div');
-    headerContainer.className = 'header-container';
+  private buildHeader(host: HTMLElement): void {
+    const header = create('div', ['header-container']);
+    header.append(create('div', ['logo-container']) as HTMLElement);
+    header.querySelector('.logo-container')?.append(createSvgIcon(icons.logo));
+    header.append(this.burgerMenu());
+    host.parentElement?.prepend(header);
+  }
 
-    const logoContainer = document.createElement('div');
-    logoContainer.className = 'logo-container';
-    logoContainer.innerHTML = icons.logo;
-    headerContainer.appendChild(logoContainer);
+  private burgerMenu(): HTMLElement {
+    const wrap = create('div', ['menu-container']);
+    const burger = create('button', ['burger-button']) as HTMLButtonElement;
+    burger.append(createSvgIcon(icons.burger));
+    const menu = create('div', ['burger-menu', 'hidden']);
 
-    const menuContainer = document.createElement('div');
-    menuContainer.className = 'menu-container';
+    const toggle = () => {
+      burger.classList.toggle('active');
+      menu.classList.toggle('hidden');
+    };
 
-    const burgerButton = document.createElement('button');
-    burgerButton.className = 'burger-button';
-
-    const burgerMenu = document.createElement('div');
-    burgerMenu.className = 'burger-menu hidden';
-
-    const syncMenuItem = document.createElement('button');
-    syncMenuItem.innerHTML = `${icons.sia}<span>Sync Passkeys</span>`;
-    syncMenuItem.className = 'menu-item';
-    syncMenuItem.onclick = async (e) => {
+    burger.addEventListener('click', (e) => {
       e.stopPropagation();
-      syncMenuItem.disabled = true;
-      await this.syncPasskeys(syncMenuItem);
-      syncMenuItem.disabled = false;
-      burgerMenu.classList.add('hidden');
-      burgerButton.classList.remove('active');
-    };
-    burgerMenu.appendChild(syncMenuItem);
-
-    const settingsMenuItem = document.createElement('button');
-    settingsMenuItem.innerHTML = `${icons.settings}<span>Renterd Settings</span>`;
-    settingsMenuItem.className = 'menu-item';
-    settingsMenuItem.onclick = () => {
-      showSettingsForm();
-      burgerMenu.classList.add('hidden');
-      burgerButton.classList.remove('active');
-    };
-    burgerMenu.appendChild(settingsMenuItem);
-
-    burgerButton.onclick = (e) => {
-      e.stopPropagation();
-      burgerButton.classList.toggle('active');
-      burgerMenu.classList.toggle('hidden');
-    };
-
+      toggle();
+    });
     document.addEventListener('click', (e) => {
-      if (!menuContainer.contains(e.target as Node) && !burgerMenu.classList.contains('hidden')) {
-        burgerMenu.classList.add('hidden');
-        burgerButton.classList.remove('active');
-      }
+      if (!wrap.contains(e.target as Node) && !menu.classList.contains('hidden')) toggle();
     });
 
-    burgerButton.innerHTML = icons.burger;
-
-    menuContainer.appendChild(burgerButton);
-    menuContainer.appendChild(burgerMenu);
-
-    headerContainer.appendChild(menuContainer);
-
-    passkeyList.parentElement?.insertBefore(headerContainer, passkeyList);
-  }
-
-  // Extract the root domain
-  private getRootDomain(rpId: string): string {
-    const parts = rpId.toLowerCase().split('.');
-    if (parts.length > 2) {
-      return parts.slice(-2).join('.');
-    }
-    return rpId;
-  }
-
-  // Create passkey list item
-  private createPasskeyListItem(passkey: StoredCredential): HTMLLIElement {
-    const listItem = document.createElement('li');
-    listItem.className = 'passkey-item';
-
-    const siteInfo = this.createSiteInfo(passkey);
-    const userInfo = this.createUserInfo(passkey);
-
-    listItem.appendChild(siteInfo);
-    listItem.appendChild(userInfo);
-
-    const actionContainer = this.createActionButtons(passkey);
-    listItem.appendChild(actionContainer);
-
-    return listItem;
-  }
-
-  // Site info
-  private createSiteInfo(passkey: StoredCredential): HTMLElement {
-    const siteInfo = document.createElement('div');
-    siteInfo.className = 'site-info';
-
-    const siteIcon = document.createElement('img');
-    siteIcon.src = `https://www.google.com/s2/favicons?domain=${this.getRootDomain(passkey.rpId)}&sz=64`;
-    siteIcon.alt = passkey.rpId;
-    siteIcon.className = 'site-icon';
-
-    const siteName = document.createElement('span');
-    siteName.textContent = passkey.rpId.replace(/^www\./, '');
-
-    siteInfo.appendChild(siteIcon);
-    siteInfo.appendChild(siteName);
-
-    return siteInfo;
-  }
-
-  // User info
-  private createUserInfo(passkey: StoredCredential): HTMLElement {
-    const userInfo = document.createElement('div');
-    userInfo.className = 'user-info';
-
-    userInfo.innerHTML = `
-      ${icons.user}
-      <span>${passkey.userName || 'Unknown User'}</span>
-    `;
-
-    return userInfo;
-  }
-
-  // Create action buttons
-  private createActionButtons(passkey: StoredCredential): HTMLElement {
-    const actionContainer = document.createElement('div');
-    actionContainer.className = 'action-container';
-
-    const uploadButton = document.createElement('button');
-    const uploadButtonText = passkey.isSynced ? 'Synced' : 'Backup to Sia';
-    const uploadButtonIcon = passkey.isSynced ? icons.check : icons.sia;
-    uploadButton.innerHTML = `${uploadButtonIcon}<span>${uploadButtonText}</span>`;
-    uploadButton.className = passkey.isSynced
-      ? 'button button-sync upload-button'
-      : 'button button-green upload-button';
-    uploadButton.onclick = () => {
-      this.uploadPasskey(passkey, uploadButton);
-    };
-    actionContainer.appendChild(uploadButton);
-
-    const deleteButton = document.createElement('button');
-    deleteButton.innerHTML = `${icons.delete}<span>Delete</span>`;
-    deleteButton.className = 'button button-red';
-    deleteButton.onclick = () => {
-      this.deletePasskey(passkey.uniqueId);
-    };
-    actionContainer.appendChild(deleteButton);
-
-    return actionContainer;
-  }
-
-  // Delete passkey
-  async deletePasskey(uniqueId: string) {
-    const confirmed = await this.showModal(
-      'confirm',
-      'Delete Passkey',
-      'Are you sure you want to delete this Passkey? This action cannot be undone.',
+    menu.append(
+      createButton(icons.sia, 'Sync Passkeys', ['menu-item'], async (btn) => {
+        btn.disabled = true;
+        await this.sync(btn);
+        btn.disabled = false;
+        toggle();
+      }),
+      createButton(icons.settings, 'Renterd Settings', ['menu-item'], () => {
+        showSettingsForm();
+        toggle();
+      }),
     );
 
-    if (confirmed) {
-      try {
-        const db = await this.openDatabase();
-        const transaction = db.transaction('storedCredentials', 'readwrite');
-        const store = transaction.objectStore('storedCredentials');
-        const request = store.delete(uniqueId);
+    wrap.append(burger, menu);
+    return wrap;
+  }
 
-        request.onsuccess = () => {
-          this.displayPasskeys();
-          this.showNotification('success', 'Success!', 'Passkey deleted successfully.');
-        };
+  private stateView(
+    parent: HTMLElement,
+    o: {
+      title: string;
+      subtitle: string;
+      icon: string;
+      label: string;
+      btnClass: string;
+      action: (b: HTMLButtonElement) => void;
+    },
+  ): void {
+    const box = create('div', ['centered-container']);
+    const title = create('div', ['small-title']);
+    title.textContent = o.title;
+    const subtitle = create('div', ['small-subtitle']);
+    subtitle.textContent = o.subtitle;
+    box.append(title, subtitle);
 
-        request.onerror = () => {
-          console.error('Error deleting passkey:', request.error);
-          this.showNotification('error', 'Error!', 'Failed to delete passkey.');
-        };
-      } catch (error) {
-        console.error('Error in deletePasskey:', error);
-        this.showNotification('error', 'Error!', 'Failed to delete passkey.');
-      }
+    const wrap = create('div', ['flex-center']);
+    wrap.append(createButton(o.icon, o.label, ['button', o.btnClass, 'button-gap'], o.action));
+    box.append(wrap);
+    parent.append(box);
+  }
+
+  private passkeyItem(p: StoredCredential): HTMLLIElement {
+    const li = create('li', ['passkey-item']);
+
+    const siteInfo = create('div', ['site-info']);
+    const img = create('img', ['site-icon']) as HTMLImageElement;
+    const domain = sanitizeDomain(p.rpId);
+    img.src = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+    img.alt = domain;
+    const siteText = create('span');
+    siteText.textContent = p.rpId.replace(/^www\./, '');
+    siteInfo.append(img, siteText);
+
+    const userInfo = create('div', ['user-info']);
+    userInfo.append(createSvgIcon(icons.user));
+    const userSpan = create('span');
+    userSpan.textContent = p.userName || 'Unknown User';
+    userInfo.append(userSpan);
+
+    const actions = create('div', ['action-container']);
+    const backup = createButton(
+      p.isSynced ? icons.check : icons.sia,
+      p.isSynced ? 'Synced' : 'Backup to Sia',
+      ['button', p.isSynced ? 'button-sync' : 'button-green'],
+      (b) => this.backup(p, b),
+    );
+    const del = createButton(icons.delete, 'Delete', ['button', 'button-red'], () =>
+      this.remove(p.uniqueId),
+    );
+    actions.append(backup, del);
+
+    li.append(siteInfo, userInfo, actions);
+    return li;
+  }
+
+  private async remove(id: string): Promise<void> {
+    const ok = await modal(
+      'confirm',
+      'Delete Passkey',
+      'Are you sure you want to delete this Passkey?',
+    );
+    if (!ok) return;
+
+    try {
+      const db = await this.openDb();
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).delete(id).onsuccess = () => {
+        notify('success', 'Deleted', 'Passkey deleted successfully.');
+        this.render();
+      };
+      tx.onerror = () => notify('error', 'Error', 'Failed to delete passkey.');
+    } catch (e) {
+      console.error(e);
+      notify('error', 'Error', 'Failed to delete passkey.');
     }
   }
 
-  // Orchestrate sync passkeys
-  private async syncPasskeys(button: HTMLButtonElement | Element) {
-    if (button instanceof HTMLButtonElement) {
-      const buttonText = button.querySelector('span');
-      if (buttonText) {
-        buttonText.textContent = 'Syncing...';
-      }
-      button.disabled = true;
+  private async backup(p: StoredCredential, btn: HTMLButtonElement): Promise<void> {
+    btn.disabled = true;
+    btn.classList.add('uploading');
+    setButtonLabel(btn, 'Backing up…');
+
+    try {
+      // Send only uniqueId to background
+      const res = await browser.runtime.sendMessage({ type: 'uploadToSia', uniqueId: p.uniqueId });
+      if (res?.success) {
+        // Update local state
+        p.isSynced = true;
+        btn.classList.replace('button-green', 'button-sync');
+        btn.innerHTML = '';
+        btn.append(createSvgIcon(icons.check));
+        const span = create('span');
+        span.textContent = 'Synced';
+        btn.append(span);
+        notify('success', 'Success', res.message);
+        // Re-render to update the stored state
+        await this.render();
+      } else throw new Error(res?.error ?? 'Upload failed');
+    } catch (e) {
+      console.error(e);
+      notify('error', 'Error', String(e));
+      btn.innerHTML = '';
+      btn.append(createSvgIcon(p.isSynced ? icons.check : icons.sia));
+      const span = create('span');
+      span.textContent = p.isSynced ? 'Synced' : 'Backup to Sia';
+      btn.append(span);
+    } finally {
+      btn.disabled = false;
+      btn.classList.remove('uploading');
     }
+  }
+
+  private async sync(btn: HTMLButtonElement): Promise<void> {
+    btn.disabled = true;
+    setButtonLabel(btn, 'Syncing…');
 
     const settings = await getSettings();
     if (!settings || !validateSettings(settings)) {
-      this.showNotification(
-        'error',
-        'Error!',
-        'Cannot sync passkeys, no renterd server settings found.',
-      );
-      if (button instanceof HTMLButtonElement) {
-        this.resetSyncButton(button);
-      }
+      notify('error', 'Error', 'No renterd settings found.');
+      resetSyncButton(btn);
       return;
     }
 
     try {
-      const uploadResult = await this.uploadUnsyncedPasskeys();
-      const downloadResult = await this.downloadNewPasskeys();
+      const [up, down] = await Promise.all([this.uploadUnsynced(), this.downloadNew()]);
 
-      let notificationType: NotificationType | null = null;
-      let notificationTitle = '';
-      let notificationMessage = '';
+      let type: NotificationType;
+      let msg: string;
 
-      if (uploadResult.error || downloadResult.error) {
-        notificationType = 'error';
-        notificationTitle = 'Error!';
-        notificationMessage = 'Error syncing Passkeys with renterd server. Please try again later.';
-      } else if (uploadResult.failedCount > 0 || downloadResult.failedCount > 0) {
-        notificationType = 'warning';
-        notificationTitle = 'Warning';
-        notificationMessage =
-          'Some Passkeys failed to synchronize. Check your settings and try again.';
-      } else if (downloadResult.empty) {
-        notificationType = 'info';
-        notificationTitle = 'Info';
-        notificationMessage = 'No Passkeys found on renterd server.';
+      if (up.error || down.error) {
+        type = 'error';
+        msg = 'Error syncing Passkeys with renterd server.';
+      } else if (up.failedCount || down.failedCount) {
+        type = 'warning';
+        msg = 'Some passkeys failed to synchronize.';
+      } else if (down.empty) {
+        type = 'info';
+        msg = 'No new passkeys found on renterd server.';
       } else {
-        notificationType = 'success';
-        notificationTitle = 'Success!';
-        notificationMessage = `Successfully synchronized ${downloadResult.syncedCount} passkey(s).`;
+        type = 'success';
+        msg = `Synchronized ${down.syncedCount} passkey(s).`;
       }
 
-      if (notificationType) {
-        this.showNotification(notificationType, notificationTitle, notificationMessage);
-      }
-
-      await this.displayPasskeys();
-    } catch (error) {
-      console.error('Error during sync:', error);
-      this.showNotification(
-        'error',
-        'Error!',
-        'Error syncing Passkeys with renterd server. Please try again later.',
-      );
+      notify(type, type.charAt(0).toUpperCase() + type.slice(1), msg);
+      await this.render();
+    } catch (e) {
+      console.error(e);
+      notify('error', 'Error', 'Error syncing Passkeys with renterd server.');
     } finally {
-      if (button instanceof HTMLButtonElement) {
-        this.resetSyncButton(button);
-      }
+      resetSyncButton(btn);
     }
   }
 
-  private resetSyncButton(button: HTMLButtonElement) {
-    const text = 'Sync Passkeys';
-    const icon = icons.sia;
-    button.innerHTML = `${icon}<span>${text}</span>`;
-    button.disabled = false;
-  }
-
-  // Upload only unsynced passkeys
-  private async uploadUnsyncedPasskeys(): Promise<{
-    uploadedCount: number;
-    failedCount: number;
-    error: boolean;
-  }> {
-    const storedCredentials = await getAllStoredCredentialsFromDB();
-    const unsynced = storedCredentials.filter((p) => !p.isSynced);
-
-    if (unsynced.length === 0) {
-      return { uploadedCount: 0, failedCount: 0, error: false };
-    }
+  private async uploadUnsynced(): Promise<SyncUploadResult> {
+    const all = await getAllStoredCredentialsFromDB();
+    const unsynced = all.filter((c) => !c.isSynced);
+    if (!unsynced.length) return { uploadedCount: 0, failedCount: 0, error: false };
 
     try {
-      const response = await browser.runtime.sendMessage({
-        type: 'uploadUnsyncedPasskeys',
-        passkeys: unsynced,
-      });
-
-      if (response && response.success) {
-        return {
-          uploadedCount: response.uploadedCount || 0,
-          failedCount: response.failedCount || 0,
-          error: false,
-        };
-      } else {
-        return {
-          uploadedCount: 0,
-          failedCount: unsynced.length,
-          error: true,
-        };
-      }
-    } catch (error) {
-      console.error('Error backing up unsynced passkeys:', error);
+      // Send only uniqueIds instead of full objects
+      const uniqueIds = unsynced.map((c) => c.uniqueId);
+      const res = await browser.runtime.sendMessage({ type: 'uploadUnsyncedPasskeys', uniqueIds });
       return {
-        uploadedCount: 0,
-        failedCount: unsynced.length,
-        error: true,
+        uploadedCount: res?.uploadedCount ?? 0,
+        failedCount: res?.failedCount ?? 0,
+        error: !res?.success,
       };
+    } catch {
+      return { uploadedCount: 0, failedCount: unsynced.length, error: true };
     }
   }
 
-  // Download new passkeys from renterd
-  private async downloadNewPasskeys(): Promise<{
-    syncedCount: number;
-    failedCount: number;
-    empty: boolean;
-    error: boolean;
-  }> {
+  private async downloadNew(): Promise<SyncDownloadResult> {
     try {
-      const response = await browser.runtime.sendMessage({
-        type: 'syncFromSia',
-      });
-
-      if (response && response.success) {
-        return {
-          syncedCount: response.syncedCount || 0,
-          failedCount: response.failedCount || 0,
-          empty: response.syncedCount === 0 && response.failedCount === 0,
-          error: false,
-        };
-      } else {
-        return {
-          syncedCount: 0,
-          failedCount: 0,
-          empty: true,
-          error: true,
-        };
-      }
-    } catch (error) {
-      console.error('Error downloading passkeys:', error);
+      const res = await browser.runtime.sendMessage({ type: 'syncFromSia' });
       return {
-        syncedCount: 0,
-        failedCount: 0,
-        empty: true,
-        error: true,
+        syncedCount: res?.syncedCount ?? 0,
+        failedCount: res?.failedCount ?? 0,
+        empty: !res?.syncedCount && !res?.failedCount,
+        error: !res?.success,
       };
+    } catch {
+      return { syncedCount: 0, failedCount: 0, empty: true, error: true };
     }
   }
 
-  // Backup Passkey
-  async uploadPasskey(passkey: StoredCredential, uploadButton: HTMLButtonElement) {
-    const uploadButtonText = uploadButton.querySelector('span');
-    if (uploadButtonText) {
-      uploadButtonText.textContent = 'Backing up...';
-    }
-    uploadButton.classList.add('uploading');
-    uploadButton.disabled = true;
-
-    try {
-      const response = await browser.runtime.sendMessage({
-        type: 'uploadToSia',
-        passkeyData: passkey,
-      });
-
-      if (response && response.success) {
-        this.showNotification('success', 'Success!', response.message);
-
-        uploadButton.classList.remove('button-green');
-        uploadButton.classList.add('button-sync');
-        uploadButton.innerHTML = `${icons.check}<span>Synced</span>`;
-        uploadButton.classList.remove('uploading');
-        uploadButton.disabled = false;
-        passkey.isSynced = true;
-      } else {
-        const errorMessage = response && response.error ? response.error : 'An error occurred.';
-        console.error('Error backing up passkey:', errorMessage);
-        this.showNotification('error', 'Error!', errorMessage);
-
-        const text = passkey.isSynced ? 'Synced' : 'Backup to Sia';
-        const icon = passkey.isSynced ? icons.check : icons.sia;
-        uploadButton.innerHTML = `${icon}<span>${text}</span>`;
-        uploadButton.classList.remove('uploading');
-        uploadButton.disabled = false;
-      }
-    } catch (error) {
-      console.error('Error backing up passkey:', error);
-      this.showNotification('error', 'Error!', `An error occurred: ${error}`);
-
-      const text = passkey.isSynced ? 'Synced' : 'Backup to Sia';
-      const icon = passkey.isSynced ? icons.check : icons.sia;
-      uploadButton.innerHTML = `${icon}<span>${text}</span>`;
-      uploadButton.classList.remove('uploading');
-      uploadButton.disabled = false;
-    }
-  }
-
-  // Open database
-  private async openDatabase(): Promise<IDBDatabase> {
+  private openDb(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open('NydiaDB', 3);
-
-      request.onupgradeneeded = () => {
-        const db = request.result;
-        const transaction =
-          request.transaction || db.transaction(['storedCredentials', 'settings'], 'versionchange');
-
-        let objectStore: IDBObjectStore;
-
-        if (!db.objectStoreNames.contains('storedCredentials')) {
-          objectStore = db.createObjectStore('storedCredentials', {
-            keyPath: 'uniqueId',
-          });
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        let store: IDBObjectStore;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          store = db.createObjectStore(STORE_NAME, { keyPath: 'uniqueId' });
         } else {
-          objectStore = transaction.objectStore('storedCredentials');
+          store = req.transaction!.objectStore(STORE_NAME);
         }
-
-        if (!objectStore.indexNames.contains('credentialId')) {
-          objectStore.createIndex('credentialId', 'credentialId', {
-            unique: true,
-          });
-        }
-        if (!objectStore.indexNames.contains('rpId')) {
-          objectStore.createIndex('rpId', 'rpId', { unique: false });
-        }
-
-        if (!db.objectStoreNames.contains('settings')) {
+        ensureIndex(store, 'credentialId', 'credentialId', { unique: true });
+        ensureIndex(store, 'rpId', 'rpId');
+        if (!db.objectStoreNames.contains('settings'))
           db.createObjectStore('settings', { keyPath: 'id' });
-        }
       };
-
-      request.onsuccess = () => {
-        resolve(request.result);
-      };
-
-      request.onerror = () => {
-        reject(request.error);
-      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
     });
   }
 }

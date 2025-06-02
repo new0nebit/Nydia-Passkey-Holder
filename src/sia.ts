@@ -1,11 +1,11 @@
-import { getSettings, saveStoredCredential } from './store';
-import { RenterdSettings, StoredCredential } from './types';
-import { logInfo, logError } from './logger';
+import { logInfo, logError }                  from './logger';
+import { getSettings }                        from './store';
+import { EncryptedRecord, RenterdSettings }   from './types';
 
 // Create Basic Auth headers for renterd API.
 function createRenterdHeaders(settings: RenterdSettings, contentType?: string): HeadersInit {
   const headers: HeadersInit = {
-    'Authorization': 'Basic ' + btoa(`root:${settings.password}`),
+    'Authorization': 'Basic ' + btoa(`username:${settings.password}`),
   };
   if (contentType) {
     headers['Content-Type'] = contentType;
@@ -71,7 +71,7 @@ async function uploadPasskeyToRenterd(
   fileContent: Blob | null,
   fileName: string,
   settings: RenterdSettings,
-  testConnection = false
+  testConnection = false,
 ): Promise<void> {
   logInfo('Starting uploadPasskeyToRenterd', { fileName, settings });
 
@@ -91,11 +91,11 @@ async function uploadPasskeyToRenterd(
   }
 }
 
-// Download a passkey from renterd and return it as StoredCredential.
+// Download a passkey from renterd and return it as EncryptedRecord.
 export async function downloadPasskeyFromRenterd(
   fileName: string,
-  settings: RenterdSettings
-): Promise<StoredCredential> {
+  settings: RenterdSettings,
+): Promise<EncryptedRecord> {
   logInfo('Starting downloadPasskeyFromRenterd', { fileName, settings });
 
   const url = buildRenterdObjectURL(settings, fileName);
@@ -104,17 +104,26 @@ export async function downloadPasskeyFromRenterd(
   try {
     const response = await makeRequest(url, { method: 'GET', headers });
     const data = await response.json();
-    logInfo('Downloaded passkey data', Object.keys(data));
-    return data as StoredCredential;
+    logInfo('Downloaded encrypted passkey data', { uniqueId: data.uniqueId });
+    
+    // Validate that it's a proper EncryptedRecord
+    if (!data.uniqueId || !data.iv || !data.data) {
+      throw new Error('Invalid encrypted record format');
+    }
+
+    // Ensure plain-status flag is always present
+    if (data.isSynced === undefined) data.isSynced = true;
+    
+    return data as EncryptedRecord;
   } catch (error) {
     logError(`Error downloading passkey ${fileName} from renterd`, error);
     throw error;
   }
 }
 
-// Upload a passkey and mark it as synced in IndexedDB.
+// Upload an encrypted passkey record to renterd.
 export async function uploadPasskeyDirect(
-  passkey: StoredCredential
+  encryptedRecord: EncryptedRecord,
 ): Promise<{ success: boolean; message?: string; error?: string }> {
   const settings = await getSettings();
   if (!settings) {
@@ -124,21 +133,22 @@ export async function uploadPasskeyDirect(
     };
   }
 
-  const passkeyDataJson = JSON.stringify(passkey, null, 2);
+  // Mark record as synced before upload
+  (encryptedRecord as any).isSynced = true;
+
+  const passkeyDataJson = JSON.stringify(encryptedRecord, null, 2);
   const blob = new Blob([passkeyDataJson], { type: 'application/json' });
 
   try {
-    await uploadPasskeyToRenterd(blob, `${passkey.uniqueId}.json`, settings);
-    passkey.isSynced = true;
-    await saveStoredCredential(passkey);
+    await uploadPasskeyToRenterd(blob, `${encryptedRecord.uniqueId}.json`, settings);
 
-    logInfo('Passkey uploaded successfully', { uniqueId: passkey.uniqueId });
+    logInfo('Encrypted passkey uploaded successfully', { uniqueId: encryptedRecord.uniqueId });
     return {
       success: true,
       message: 'Passkey successfully backed up to Sia.',
     };
   } catch (error: any) {
-    logError('Error uploading passkey to renterd', error);
+    logError('Error uploading encrypted passkey to renterd', error);
     return {
       success: false,
       error: `Failed to backup passkey: ${error.message}`,
