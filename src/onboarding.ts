@@ -102,14 +102,20 @@ export class OnboardingController {
 
     const cb = document.createElement('input');
     cb.type = 'checkbox';
+    cb.id = 'seed-stored';
     cb.className = 'checkbox';
+
+    const label = document.createElement('label');
+    label.htmlFor = cb.id;
+    label.textContent = 'I have safely stored the seed phrase';
+    label.className = 'checkbox-label';
 
     const next = button('Continue', 'btn', () => void this.confirmSeedStored());
     next.disabled = true;
     cb.onchange = () => (next.disabled = !cb.checked);
 
     const cbWrap = div('checkbox-wrapper');
-    cbWrap.append(cb, span('I have safely stored the seed phrase'));
+    cbWrap.append(cb, label);
 
     wrap.append(grid, cbWrap, next);
     return wrap;
