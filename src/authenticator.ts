@@ -13,7 +13,6 @@ import {
 import { Account } from './types';
 
 // Web Crypto API
-const crypto = self.crypto;
 const subtle = crypto.subtle;
 
 // Authenticator Attestation GUID (AAGUID) for identifying the authenticator model.

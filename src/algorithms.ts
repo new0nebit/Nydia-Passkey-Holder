@@ -1,5 +1,4 @@
 // Web Crypto API
-const crypto = self.crypto;
 const subtle = crypto.subtle;
 
 // This interface defines the methods for signing algorithms used in WebAuthn operations.
