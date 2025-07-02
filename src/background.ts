@@ -18,6 +18,7 @@ import {
   getSettings,
   saveEncryptedCredential,
   getEncryptedCredentialByUniqueId,
+  isBackgroundContext,
 } from './store';
 import { EncryptedRecord } from './types';
 
@@ -341,6 +342,7 @@ async function router(msg: any): Promise<any> {
 
 // Bootstrap
 logInfo('bootstrap');
+logInfo('isBackgroundContext', isBackgroundContext());
 patchSelfSend(router);
 browser.runtime.onMessage.addListener(router);
 

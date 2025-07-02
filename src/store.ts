@@ -1,23 +1,41 @@
-import browser                                                  from 'browser-api';
+import browser from 'browser-api';
 
-import { Ed25519, ES256, RS256, SigningAlgorithm }              from './algorithms';
-import { base64UrlDecode, base64UrlEncode }                     from './base64url';
-import { logError }                                             from './logger';
-import { uploadPasskeyDirect }                                  from './sia';
-import { RenterdSettings, StoredCredential, EncryptedRecord }   from './types';
+import { Ed25519, ES256, RS256, SigningAlgorithm } from './algorithms';
+import { base64UrlDecode, base64UrlEncode } from './base64url';
+import { logError } from './logger';
+import { uploadPasskeyDirect } from './sia';
+import { RenterdSettings, StoredCredential, EncryptedRecord } from './types';
 
 // Web Crypto API
 const subtle = crypto.subtle;
 
-// messaging helper
-function isBackgroundContext(): boolean {
-  return (globalThis as any).document === undefined;
+// Check background context
+export function isBackgroundContext(): boolean {
+  // MV3 Service Worker
+  if (typeof ServiceWorkerGlobalScope !== 'undefined' &&
+      self instanceof ServiceWorkerGlobalScope) {
+    return true;
+  }
+
+  // MV2 Persistent Background Page
+  if (typeof window !== 'undefined' && typeof browser !== 'undefined') {
+    const bgUrls = [
+      browser.runtime.getURL('_generated_background_page.html'),
+    ];
+    
+    if (bgUrls.includes(window.location.href)) {
+      return true;
+    }
+  }
+
+  return false;
 }
+
 async function sendMessageToExtension(msg: any): Promise<any> {
   return isBackgroundContext() ? handleMessageInBackground(msg) : browser.runtime.sendMessage(msg);
 }
 
-// IndexedDB Operations
+// IndexedDB
 const DB_NAME = 'NydiaDB';
 const DB_VERSION = 4;
 const STORE_NAME = 'storedCredentials';
@@ -118,8 +136,10 @@ export async function saveStoredCredential(c: StoredCredential): Promise<void> {
   const enc = await encryptCredential(c);
   const db = await openDatabase();
   await new Promise<void>((res) => {
-    db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put(enc).onsuccess = () =>
-      res();
+    db
+      .transaction(STORE_NAME, 'readwrite')
+      .objectStore(STORE_NAME)
+      .put(enc).onsuccess = () => res();
   });
 }
 
@@ -149,7 +169,7 @@ async function getStoredCredentialByCredentialId(
   return (await getAllStoredCredentialsFromDB()).find((c) => c.credentialId === credentialId);
 }
 
-// NEW: Get encrypted credential directly from DB without decryption
+// Get encrypted credential directly from DB
 export async function getEncryptedCredentialByUniqueId(
   uniqueId: string,
 ): Promise<EncryptedRecord | null> {
@@ -162,7 +182,7 @@ export async function getEncryptedCredentialByUniqueId(
   });
 }
 
-// NEW: Save encrypted credential directly to DB without encryption
+// Save encrypted credential directly to DB
 export async function saveEncryptedCredential(record: EncryptedRecord): Promise<void> {
   const db = await openDatabase();
   await new Promise<void>((res) => {
@@ -332,5 +352,5 @@ export async function findCredential(
 export async function getAllStoredCredentials(): Promise<StoredCredential[]> {
   const r = await sendMessageToExtension({ type: 'getAllStoredCredentials' });
   if (r?.error) throw new Error(r.error);
-  return r;
+  return Array.isArray(r) ? r : [];
 }
