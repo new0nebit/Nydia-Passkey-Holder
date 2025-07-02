@@ -1,13 +1,27 @@
-import browser                                                                                                 from 'browser-api';
+import browser from 'browser-api';
 
-import { createCredential, getAvailableCredentials, handleGetAssertion, initializeAuthenticator }              from './authenticator';
-import { base64UrlToArrayBuffer }                                                                              from './base64url';
-import { logError, logInfo }                                                                                   from './logger';
-import { downloadPasskeyFromRenterd, getPasskeysFromRenterd, uploadPasskeyDirect }                             from './sia';
-import { handleMessageInBackground, getSettings, saveEncryptedCredential, getEncryptedCredentialByUniqueId }   from './store';
-import { EncryptedRecord }                                                                                     from './types';
+import { 
+  createCredential,
+  getAvailableCredentials,
+  handleGetAssertion,
+  initializeAuthenticator,
+} from './authenticator';
+import { base64UrlToArrayBuffer } from './base64url';
+import { logError, logInfo } from './logger';
+import { 
+  downloadPasskeyFromRenterd,
+  getPasskeysFromRenterd,
+  uploadPasskeyDirect,
+} from './sia';
+import { 
+  handleMessageInBackground,
+  getSettings,
+  saveEncryptedCredential,
+  getEncryptedCredentialByUniqueId,
+} from './store';
+import { EncryptedRecord } from './types';
 
-// IndexedDB operations
+// IndexedDB
 const DB_NAME = 'NydiaDB';
 const DB_VER = 4;
 
@@ -165,14 +179,17 @@ async function handleUploadToSia(uniqueId: string) {
 async function handleUploadUnsyncedPasskeys(uniqueIds: string[]) {
   let ok = 0,
     fl = 0;
+
   for (const uniqueId of uniqueIds) {
     try {
-      const result = await handleUploadToSia(uniqueId);
-      result.success ? ok++ : fl++;
+      const { success } = await handleUploadToSia(uniqueId);
+      if (success) ok++;
+      else fl++;
     } catch {
       fl++;
     }
   }
+
   return { success: fl === 0, uploadedCount: ok, failedCount: fl };
 }
 
@@ -219,7 +236,7 @@ async function router(msg: any): Promise<any> {
       case 'getAvailableCredentials':
         return getAvailableCredentials(msg.rpId);
 
-      // Updated to use uniqueId
+      // Use uniqueId
       case 'uploadToSia':
         return handleUploadToSia(msg.uniqueId);
 
