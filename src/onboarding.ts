@@ -1,6 +1,6 @@
-import browser        from 'browser-api';
+import browser from 'browser-api';
 
-import { logError }   from './logger';
+import { logError } from './logger';
 import './styles/onboarding.css';
 
 export class OnboardingController {
@@ -172,7 +172,7 @@ export class OnboardingController {
   }
 
   private async confirmSeedStored(): Promise<void> {
-    await this.deriveAndStoreKey(this.seedPhrase, false);
+    await this.deriveAndStoreKey(this.seedPhrase);
   }
 
   private async verifySeed(errBox: HTMLElement): Promise<void> {
@@ -182,7 +182,7 @@ export class OnboardingController {
       errBox.classList.remove('hidden');
       return;
     }
-    await this.deriveAndStoreKey(this.inputSeedPhrase.trim().toLowerCase(), true);
+    await this.deriveAndStoreKey(this.inputSeedPhrase.trim().toLowerCase());
   }
 
   // Secure key transfer using RSA-OAEP
@@ -244,7 +244,7 @@ export class OnboardingController {
     data.fill(0);
   }
 
-  private async deriveAndStoreKey(seed: string, recovery: boolean): Promise<void> {
+  private async deriveAndStoreKey(seed: string): Promise<void> {
     try {
       // Derive key from seed
       this.derivedKey = await this.deriveKeyFromSeed(seed);
