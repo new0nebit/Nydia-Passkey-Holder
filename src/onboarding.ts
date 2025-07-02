@@ -148,7 +148,7 @@ export class OnboardingController {
 
   private viewSuccess(): HTMLElement {
     const wrap = div('flex-col');
-    
+
     if (this.isRecovery) {
       wrap.append(
         this.svgCheck(),
@@ -156,7 +156,6 @@ export class OnboardingController {
         span('Your encryption key has been successfully recovered.', 'subtitle'),
         span('You can now start using Nydia.', 'info-text'),
         button('Start Using Nydia', 'btn', () => {
-          localStorage.setItem('nydiaOnboardingDone', 'true');
           this.purgeSensitiveData();
           window.location.reload();
         }),
@@ -167,13 +166,12 @@ export class OnboardingController {
         span('Done!', 'title'),
         span('Setup complete! You can now start using Nydia.', 'subtitle'),
         button('Start Using Nydia', 'btn', () => {
-          localStorage.setItem('nydiaOnboardingDone', 'true');
           this.purgeSensitiveData();
           window.location.reload();
         }),
       );
     }
-    
+
     return wrap;
   }
 
@@ -257,6 +255,9 @@ export class OnboardingController {
 
       // Use secure transfer instead of raw export
       await this.secureKeyTransfer(this.derivedKey);
+
+      // Mark onboarding as complete after successful key storage
+      localStorage.setItem('nydiaOnboardingDone', 'true');
 
       // Move to success step
       this.step = 6;
