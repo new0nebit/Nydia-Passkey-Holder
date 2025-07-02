@@ -77,7 +77,7 @@ export class OnboardingController {
         this.step = 2;
         this.render();
       }),
-      button('Restore Seed', 'btn btn-secondary', () => {
+      button('Restore Seed', 'btn btn-restore', () => {
         this.isRecovery = true;
         this.step = 2;
         this.render();
@@ -138,7 +138,7 @@ export class OnboardingController {
       ta,
       err,
       button('Verify', 'btn', () => void this.verifySeed(err)),
-      button('Back', 'btn btn-secondary', () => {
+      button('Back', 'btn-back', () => {
         this.step = 1;
         this.render();
       }),

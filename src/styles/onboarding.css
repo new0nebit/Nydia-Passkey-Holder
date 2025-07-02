@@ -1,15 +1,61 @@
-/* ================================= */
-/* Nydia Onboarding Styles          */
-/* ================================= */
+/* ============================= */
+/*    Nydia Onboarding Styles    */
+/* ============================= */
 
-/* ---------- Main container ---------- */
+/* ---------- Base color-scheme ---------- */
+:root {
+  color-scheme: light dark;
+  /* Light palette */
+  --bg-primary: #fff;
+  --bg-secondary: #f3f4f6;
+  --bg-input: #fff;
+  --bg-success: #dcfce7;
+  --text-primary: #1a202c;
+  --text-secondary: #6b7280;
+  --border: #e5e7eb;
+  --accent-gradient: linear-gradient(to right, #fb923c, #f87171);
+  --accent-orange: #fb923c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Dark palette */
+    --bg-primary: #1a202c;
+    --bg-secondary: #374151;
+    --bg-input: #374151;
+    --bg-success: #065f46;
+    --text-primary: #fff;
+    --text-secondary: #9ca3af;
+    --border: #4b5563;
+    --accent-orange: #fb923c;
+  }
+}
+
+/* ---------- Global helpers ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.onboarding-container,
+.seed-input,
+.seed-grid {
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+/* ---------- Layout ---------- */
 .onboarding-container {
-  max-height: 300vh;
+  min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fff;
-  color: #1a202c;
+  margin: -20px -20px -30px;
+  padding: 20px 20px 30px;
+  position: relative;
+  z-index: 1;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .content-wrapper {
@@ -18,7 +64,6 @@
   padding: 2rem;
 }
 
-/* ---------- Layout utilities ---------- */
 .flex-col {
   display: flex;
   flex-direction: column;
@@ -26,54 +71,57 @@
   gap: 1.5rem;
 }
 
-.hidden {
-  display: none;
-}
-
-/* ---------- Logo and branding ---------- */
+/* ---------- Typography ---------- */
 .logo {
   font-size: 2.25rem;
-  font-weight: bold;
-  background: linear-gradient(to right, #fb923c, #f87171, #fb923c);
+  font-weight: 700;
+  background: var(--accent-gradient);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
+.title,
+.description,
+.subtitle,
+.info-text {
+  text-align: center;
+}
+
+.title {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
 .description {
   font-size: 1.25rem;
-  text-align: center;
   font-weight: 500;
 }
 
-/* ---------- Typography ---------- */
-.title {
-  font-size: 1.25rem;
-  font-weight: bold;
-  text-align: center;
-}
-
-.subtitle {
-  font-size: 0.875rem;
-  text-align: center;
-  color: #6b7280;
-}
-
+.subtitle,
 .info-text {
-  text-align: center;
   font-size: 0.875rem;
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
-/* ---------- Button styles ---------- */
-.btn {
+/* ---------- Buttons ---------- */
+.btn,
+.btn-restore,
+.btn-back {
+  all: unset;
+  display: inline-block;
   padding: 0.5rem 1.5rem;
-  border: none;
   border-radius: 0.5rem;
   font-weight: 500;
   cursor: pointer;
-  transition: 0.2s;
-  background: linear-gradient(to right, #fb923c, #f87171);
+  user-select: none;
+  text-align: center;
+  transition: box-shadow 0.2s, color 0.2s, transform 0.2s, background-color 0.2s, border-color 0.2s;
+}
+
+/* Primary button */
+.btn {
+  background: var(--accent-gradient);
   color: #fff;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
@@ -87,10 +135,45 @@
   cursor: not-allowed;
 }
 
-.btn-secondary {
+/* Secondary button */
+.btn-restore {
   background: transparent;
   border: 1px solid #fb923c;
   color: #fb923c;
+}
+
+@media (prefers-color-scheme: dark) {
+  .btn-restore {
+    color: #fb923c;
+  }
+}
+
+/* Navigation button */
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-secondary);
+  padding: 0.5rem 1.5rem;
+  position: relative;
+  border: 1px solid var(--accent-orange);
+  background: transparent;
+  transition: all 0.2s;
+  border-radius: 0.5rem;
+}
+
+.btn-back::before {
+  content: "←";
+  margin-right: 0.5rem;
+  transition: transform 0.2s;
+}
+
+.btn-back:hover {
+  color: var(--accent-orange);
+  background: var(--bg-secondary);
+}
+
+.btn-back:hover::before {
+  transform: translateX(-3px);
 }
 
 /* ---------- Seed phrase display ---------- */
@@ -98,11 +181,11 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 0.5rem;
-  width: 108%;
+  width: 100%;
   max-width: 24rem;
   padding: 1rem;
-  background: #f3f4f6;
   border-radius: 0.5rem;
+  background: var(--bg-secondary);
 }
 
 .seed-word {
@@ -111,9 +194,9 @@
 }
 
 .word-number {
-  color: #6b7280;
-  font-size: 0.875rem;
   margin-right: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
 }
 
 .word {
@@ -123,13 +206,14 @@
 /* ---------- Seed phrase input ---------- */
 .seed-input {
   width: 100%;
-  min-height: 100px;
-  padding: 0.75rem;
+  border: 1px solid var(--border);
   border-radius: 0.5rem;
-  border: 1px solid #e5e7eb;
-  background: #fff;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  padding: 0.75rem;
+  min-height: 100px;
   font-family: monospace;
-  resize: vertical;
+  resize: none;
 }
 
 /* ---------- Checkbox styles ---------- */
@@ -144,69 +228,29 @@
   height: 1rem;
 }
 
-/* ---------- Error message ---------- */
-.error-message {
-  color: #ef4444;
-  font-size: 0.875rem;
-  text-align: center;
-  margin-top: 0.5rem;
+.checkbox-label {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-/* ---------- Success state ---------- */
+/* ---------- Status ---------- */
 .success-icon {
   width: 4rem;
   height: 4rem;
-  background: #dcfce7;
   border-radius: 9999px;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: var(--bg-success);
 }
 
-.check-icon {
-  width: 2rem;
-  height: 2rem;
-  color: #22c55e;
+.error-message {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: #ef4444;
 }
 
-/* ================================= */
-/* Dark theme                       */
-/* ================================= */
-@media (prefers-color-scheme: dark) {
-  /* ---------- Main container ---------- */
-  .onboarding-container {
-    background: #1a202c;
-    color: #fff;
-  }
-
-  /* ---------- Typography ---------- */
-  .subtitle {
-    color: #9ca3af;
-  }
-
-  .info-text {
-    color: #9ca3af;
-  }
-
-  /* ---------- Button styles ---------- */
-  .btn-secondary {
-    color: #fb923c;
-  }
-
-  /* ---------- Seed phrase display ---------- */
-  .seed-grid {
-    background: #374151;
-  }
-
-  /* ---------- Seed phrase input ---------- */
-  .seed-input {
-    background: #374151;
-    border-color: #4b5563;
-    color: #fff;
-  }
-
-  /* ---------- Success state ---------- */
-  .success-icon {
-    background: #065f46;
-  }
+/* ---------- Utilities ---------- */
+.hidden {
+  display: none;
 }
