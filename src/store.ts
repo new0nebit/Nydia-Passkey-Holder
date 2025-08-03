@@ -205,13 +205,19 @@ export async function updateCredentialCounter(credentialId: string): Promise<voi
   rec.isSynced = false;
 
   const encUnsynced = await encryptCredential(rec);
-  const res = await uploadPasskeyDirect(encUnsynced);
 
   await saveEncryptedCredential(encUnsynced);
-  
-  if (!res.success) {
-    logError('counter sync Sia', res.error);
-  }
+
+  uploadPasskeyDirect(encUnsynced).then(async (res) => {
+    if (res.success) {
+      rec.isSynced = true;
+      await saveEncryptedCredential(await encryptCredential(rec));
+    } else {
+      logError('counter sync Sia', res.error);
+    }
+  }).catch((err) => {
+    logError('Error in async upload', err);
+  });
 }
 
 // Utility Functions
