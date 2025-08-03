@@ -94,18 +94,17 @@ export async function getPasskeysFromRenterd(
 
 // Upload a passkey to renterd under the uniqueId name.
 async function uploadPasskeyToRenterd(
-  passkeyData: Blob | null,
+  passkeyData: Blob,
   uniqueId: string,
   settings: RenterdSettings,
-  testConnection = false,
 ): Promise<void> {
   const fileName = `${uniqueId}${PASSKEY_EXTENSION}`;
-  logInfo('Starting uploadPasskeyToRenterd', { fileName, settings, testConnection });
+  logInfo('Starting uploadPasskeyToRenterd', { fileName, settings });
 
   await httpRequest(buildUploadURL(settings, fileName), {
     method: 'PUT',
     headers: buildHeaders(settings, MIME_OCTET_STREAM),
-    body: testConnection ? undefined : passkeyData,
+    body: passkeyData,
   });
   logInfo('Binary passkey blob stored on renterd', { fileName });
 }
