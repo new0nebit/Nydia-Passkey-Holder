@@ -143,9 +143,9 @@ export async function uploadPasskeyDirect(
     };
   }
 
-  // Mark record as synced before upload.
-  (record as any).isSynced = true;
-  const passkeyDataJson = JSON.stringify(record, null, 2);
+  // Clone record and mark as synced.
+  const recordToUpload = { ...record, isSynced: true };
+  const passkeyDataJson = JSON.stringify(recordToUpload, null, 2);
   const passkeyData = new Blob([passkeyDataJson], {
     type: MIME_OCTET_STREAM,
   });
