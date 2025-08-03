@@ -325,7 +325,7 @@ export async function handleMessageInBackground(message: any): Promise<any> {
 
       case 'findCredential': {
         const list = await getAllStoredCredentialsFromDB();
-        const rp = message.options.rpId ?? new URL(message.options.origin).hostname;
+        const rp = message.options.publicKey?.rpId ?? new URL(message.options.origin).hostname;
 
         if (message.selectedCredentialId) {
           const found = list.find(
