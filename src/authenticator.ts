@@ -1,19 +1,18 @@
-import { Ed25519, ES256, RS256, SigningAlgorithm }   from './algorithms';
-import { base64UrlDecode, base64UrlEncode }          from './base64url';
-import { WebAuthnCBOR }                              from './cbor';
-import { logError, logInfo }                         from './logger';
-import { 
+import { Ed25519, ES256, RS256, SigningAlgorithm } from './algorithms';
+import { base64UrlDecode, base64UrlEncode } from './base64url';
+import { WebAuthnCBOR } from './cbor';
+import { logError, logInfo } from './logger';
+import {
   createUniqueId,
   findCredential,
   getAllStoredCredentials,
   loadPrivateKey,
   savePrivateKey,
-  updateCredentialCounter
-}                                                   from './store';
-import { Account }                                  from './types';
+  updateCredentialCounter,
+} from './store';
+import { Account } from './types';
 
 // Web Crypto API
-const crypto = self.crypto;
 const subtle = crypto.subtle;
 
 // Authenticator Attestation GUID (AAGUID) for identifying the authenticator model.
@@ -363,7 +362,7 @@ export async function handleGetAssertion(
   logAuth('Challenge string:', challengeString);
 
   // Search for stored credentials
-  const storedCredential = await findCredential(options.publicKey, selectedCredentialId);
+  const storedCredential = await findCredential(options, selectedCredentialId);
 
   if (!storedCredential) {
     throw new Error('No matching credential found');

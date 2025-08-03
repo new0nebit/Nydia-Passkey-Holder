@@ -1,228 +1,184 @@
-// Check if Credential Management API is available
-(function () {
-  if (!('credentials' in navigator)) {
-    return;
-  }
+(() => {
+  // Abort early if the Credential Management API is unavailable
+  if (!('credentials' in navigator)) return;
 
-  // Preserve original methods.
-  const originalCreate = navigator.credentials.create.bind(navigator.credentials);
-  const originalGet = navigator.credentials.get.bind(navigator.credentials);
+  console.log('[Injector] WebAuthn injector initialized');
 
-  // Override credentials.create to intercept WebAuthn credential creation.
-  navigator.credentials.create = async function (options) {
-    if (!options || !('publicKey' in options)) {
-      // If not a WebAuthn operation, use the original method
-      return originalCreate.call(this, options);
-    }
-
-    return new Promise((resolve, reject) => {
-      const messageHandler = (event) => {
-        if (event.source !== window) return;
-        const message = event.data;
-
-        if (message.type === 'webauthn-create-response') {
-          window.removeEventListener('message', messageHandler);
-          resolve(transformCredential(message.response));
-        } else if (message.type === 'webauthn-create-error') {
-          window.removeEventListener('message', messageHandler);
-          reject(new DOMException(message.error, 'NotAllowedError'));
-        } else if (message.type === 'webauthn-create-fallback') {
-          window.removeEventListener('message', messageHandler);
-          // Fallback to the original method
-          originalCreate.call(navigator.credentials, options).then(resolve).catch(reject);
-        }
-      };
-
-      window.addEventListener('message', messageHandler);
-
-      // Remove the signal property if it exists, as we handle cancellation through our own abort mechanism.
-      const optionsWithoutSignal = { ...options };
-      delete optionsWithoutSignal.signal;
-
-      const serializedOptions = serializePublicKeyCredentialOptions(optionsWithoutSignal);
-
-      // Send a message to the content script
-      window.postMessage({ type: 'webauthn-create', options: serializedOptions }, '*');
-    });
+  // Convert base64url-encoded string to ArrayBuffer
+  const toArrayBuffer = (b64: string): ArrayBuffer => {
+    const bin = atob(b64.replace(/-/g, '+').replace(/_/g, '/'));
+    const len = bin.length;
+    const view = new Uint8Array(len);
+    for (let i = 0; i < len; ++i) view[i] = bin.charCodeAt(i);
+    return view.buffer;
   };
 
-  // Overrides navigator.credentials.get to intercept WebAuthn credential retrieval.
-  navigator.credentials.get = async function (options) {
-    if (!options || !('publicKey' in options)) {
-      // If not a WebAuthn operation, use the original method
-      return originalGet.call(this, options);
-    }
-
-    return new Promise((resolve, reject) => {
-      const messageHandler = (event) => {
-        if (event.source !== window) return;
-        const message = event.data;
-
-        if (message.type === 'webauthn-get-response') {
-          window.removeEventListener('message', messageHandler);
-          resolve(transformCredential(message.response));
-        } else if (message.type === 'webauthn-get-error') {
-          window.removeEventListener('message', messageHandler);
-          reject(new DOMException(message.error, 'NotAllowedError'));
-        } else if (message.type === 'webauthn-get-fallback') {
-          window.removeEventListener('message', messageHandler);
-          // Fallback to the original method
-          originalGet.call(navigator.credentials, options).then(resolve).catch(reject);
-        }
-      };
-
-      window.addEventListener('message', messageHandler);
-
-      // Remove the signal property if it exists, as we do not use it.
-      const optionsWithoutSignal = { ...options };
-      delete optionsWithoutSignal.signal;
-
-      const serializedOptions = serializePublicKeyCredentialOptions(optionsWithoutSignal);
-
-      // Send a message to the content script.
-      window.postMessage({ type: 'webauthn-get', options: serializedOptions }, '*');
-    });
+  // Convert ArrayBuffer to base64url-encoded string
+  const toBase64url = (buf: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    for (let i = 0; i < bytes.length; ++i) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
   };
 
-  /* ================================================
-     Helper Functions
-  =============================================== */
+  // Remove AbortSignal to avoid DataClone errors
+  const stripSignal = <T extends { signal?: unknown }>(obj: T): Omit<T, 'signal'> => {
+    const { signal, ...rest } = obj as any;
+    return rest;
+  };
 
-  // Transform credential data from content script into a Credential object.
-  function transformCredential(data) {
-    console.log('[Injector] Transforming credential:', data);
+  // Serialize ArrayBuffer values inside publicKey options into base64url strings
+  const serializeOptions = (opts: any): any => {
+    const out = { ...opts, origin: location.origin };
+    if (!out.publicKey) return out;
 
-    const credential = {
-      type: data.type,
-      id: data.id,
-      rawId: base64ToArrayBuffer(data.rawId),
-      response: transformAuthenticatorResponse(data.response),
-      getClientExtensionResults: () => ({}),
-      authenticatorAttachment: data.authenticatorAttachment || null,
+    const pk = (out.publicKey = { ...out.publicKey });
+
+    if (pk.challenge instanceof ArrayBuffer) pk.challenge = toBase64url(pk.challenge);
+
+    if (pk.user?.id instanceof ArrayBuffer) {
+      pk.user = { ...pk.user, id: toBase64url(pk.user.id) };
+    }
+
+    // Handle arrays of credentials that need id conversion
+    const rewrite = (arr?: any[]) => arr?.map((d) => ({ ...d, id: toBase64url(d.id) }));
+
+    pk.allowCredentials = rewrite(pk.allowCredentials);
+    pk.excludeCredentials = rewrite(pk.excludeCredentials);
+
+    return out;
+  };
+
+  // Convert raw response data to native-like WebAuthn response objects
+  const asAuthenticatorResponse = (
+    src: any,
+  ): AuthenticatorAttestationResponse | AuthenticatorAssertionResponse => {
+    if ('attestationObject' in src) {
+      // Registration flow: Attestation response (for credential creation)
+      const att: any = {
+        clientDataJSON: toArrayBuffer(src.clientDataJSON),
+        attestationObject: toArrayBuffer(src.attestationObject),
+        getTransports: () => ['internal', 'hybrid'],
+      };
+
+      // Optional get methods
+      if (src.publicKeyDER) att.getPublicKey = () => toArrayBuffer(src.publicKeyDER);
+      if (src.authenticatorData) att.getAuthenticatorData = () => toArrayBuffer(src.authenticatorData);
+      if (src.publicKeyAlgorithm !== undefined) att.getPublicKeyAlgorithm = () => src.publicKeyAlgorithm;
+
+      // Set the prototype to match native browser implementations
+      Object.setPrototypeOf(att, AuthenticatorAttestationResponse.prototype);
+      return att;
+    }
+
+    // Assertion response
+    const asr: any = {
+      clientDataJSON: toArrayBuffer(src.clientDataJSON),
+      authenticatorData: toArrayBuffer(src.authenticatorData),
+      signature: toArrayBuffer(src.signature),
+      userHandle: src.userHandle ? toArrayBuffer(src.userHandle) : null,
+    };
+    Object.setPrototypeOf(asr, AuthenticatorAssertionResponse.prototype);
+    return asr;
+  };
+
+  // Create a PublicKeyCredential object with correct prototype chain
+  const asPublicKeyCredential = (raw: any): PublicKeyCredential => {
+    const cred: any = {
+      id: raw.id,
+      rawId: toArrayBuffer(raw.rawId),
+      response: asAuthenticatorResponse(raw.response),
+      type: raw.type ?? 'public-key',
+      authenticatorAttachment: 'platform',
+      // Return resident key capability
+      getClientExtensionResults: () => ({ credProps: { rk: true } }),
+    };
+    Object.setPrototypeOf(cred, PublicKeyCredential.prototype);
+    return cred;
+  };
+
+  type Op = 'create' | 'get';
+
+  // Returns a wrapper that intercepts create/get calls
+  const wrap =
+    (op: Op, original: (o?: any) => Promise<any>) =>
+    (options?: any): Promise<any> => {
+      // Bypass for non‑WebAuthn calls
+      if (!options || !('publicKey' in options))
+        return original.call(navigator.credentials, options);
+
+      // Set up message types for communication with the WebAuthn handler
+      const base = `webauthn-${op}`;
+      const RESPONSE = `${base}-response`;
+      const ERROR = `${base}-error`;
+      const FALLBACK = `${base}-fallback`;
+
+      return new Promise((resolve, reject) => {
+        // Set up one-time message listener for WebAuthn response
+        const handler = (e: MessageEvent) => {
+          if (e.source !== window) return;
+          const { type, response, error } = e.data || {};
+          switch (type) {
+            case RESPONSE:
+              window.removeEventListener('message', handler);
+              try {
+                // Transform raw response into a proper credential object
+                resolve(asPublicKeyCredential(response));
+              } catch (err: any) {
+                reject(
+                  new DOMException(
+                    `Error transforming credential: ${err.message}`,
+                    'NotAllowedError',
+                  ),
+                );
+              }
+              break;
+
+            case ERROR:
+              window.removeEventListener('message', handler);
+              reject(new DOMException(error, 'NotAllowedError'));
+              break;
+
+            case FALLBACK:
+              // Fallback to native WebAuthn flow
+              window.removeEventListener('message', handler);
+              original.call(navigator.credentials, options).then(resolve).catch(reject);
+              break;
+          }
+        };
+
+        window.addEventListener('message', handler);
+        // Send the WebAuthn request to handler after preparing options
+        const payload = serializeOptions(stripSignal(options));
+        window.postMessage({ type: base, options: payload }, '*');
+      });
     };
 
-    console.log('[Injector] Transformed credential:', credential);
-    return credential;
-  }
+  type CredsLike = typeof navigator.credentials & {
+    store?: typeof navigator.credentials.store;
+    preventSilentAccess?: typeof navigator.credentials.preventSilentAccess;
+  };
 
-  // Transform authenticator response data into proper response object.
-  function transformAuthenticatorResponse(response) {
-    console.log('[Injector] Transforming authenticator response:', response);
+  // Build a custom navigator.credentials wrapper that intercepts create/get calls
+  const orig = navigator.credentials;
+  const nydiaCredentials: CredsLike = {
+    create: wrap('create', orig.create.bind(orig)),
+    get: wrap('get', orig.get.bind(orig)),
+    store: orig.store?.bind(orig),
+    preventSilentAccess: orig.preventSilentAccess?.bind(orig),
+  };
 
-    if ('attestationObject' in response) {
-      // Handle AuthenticatorAttestationResponse
-      const attestationResponse = {
-        clientDataJSON: base64ToArrayBuffer(response.clientDataJSON),
-        attestationObject: base64ToArrayBuffer(response.attestationObject),
-      };
+  // Replace the entire credentials object with custom implementation
+  Object.defineProperty(navigator, 'credentials', {
+    value: nydiaCredentials,
+    writable: true,
+    configurable: true,
+  });
 
-      // Add optional methods if data is available
-      if (response.publicKeyDER) {
-        const publicKeyDERArrayBuffer = base64ToArrayBuffer(response.publicKeyDER);
-        attestationResponse.getPublicKey = function () {
-          return publicKeyDERArrayBuffer;
-        };
-        console.log('[Injector] Added getPublicKey method to attestationResponse');
-      }
-
-      if (response.authenticatorData) {
-        const authenticatorDataArrayBuffer = base64ToArrayBuffer(response.authenticatorData);
-        attestationResponse.getAuthenticatorData = function () {
-          return authenticatorDataArrayBuffer;
-        };
-        console.log('[Injector] Added getAuthenticatorData method to attestationResponse');
-      }
-
-      if (response.publicKeyAlgorithm !== undefined) {
-        const publicKeyAlgorithm = response.publicKeyAlgorithm;
-        attestationResponse.getPublicKeyAlgorithm = function () {
-          return publicKeyAlgorithm;
-        };
-        console.log(
-          '[Injector] Added getPublicKeyAlgorithm method to attestationResponse:',
-          publicKeyAlgorithm,
-        );
-      }
-
-      // Add getTransports() method
-      attestationResponse.getTransports = function () {
-        return ['internal', 'hybrid'];
-      };
-      console.log('[Injector] Added getTransports method to attestationResponse');
-
-      console.log('[Injector] Transformed attestationResponse:', attestationResponse);
-      return attestationResponse;
-    } else {
-      // Handle AuthenticatorAssertionResponse
-      return {
-        clientDataJSON: base64ToArrayBuffer(response.clientDataJSON),
-        authenticatorData: base64ToArrayBuffer(response.authenticatorData),
-        signature: base64ToArrayBuffer(response.signature),
-        userHandle: response.userHandle ? base64ToArrayBuffer(response.userHandle) : null,
-      };
-    }
-  }
-
-  // Converts a base64url-encoded string to an ArrayBuffer.
-  function base64ToArrayBuffer(base64) {
-    const binaryString = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes.buffer;
-  }
-
-  // Converts an ArrayBuffer to a base64url-encoded string.
-  function arrayBufferToBase64Url(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-  }
-
-  // Serializes PublicKeyCredential options by converting ArrayBuffers to base64url strings.
-  function serializePublicKeyCredentialOptions(options) {
-    const serializedOptions = { ...options };
-
-    if (options.publicKey) {
-      serializedOptions.publicKey = { ...options.publicKey };
-
-      if (options.publicKey.challenge && options.publicKey.challenge instanceof ArrayBuffer) {
-        serializedOptions.publicKey.challenge = arrayBufferToBase64Url(options.publicKey.challenge);
-      }
-
-      if (
-        options.publicKey.user &&
-        options.publicKey.user.id &&
-        options.publicKey.user.id instanceof ArrayBuffer
-      ) {
-        serializedOptions.publicKey.user = { ...options.publicKey.user };
-        serializedOptions.publicKey.user.id = arrayBufferToBase64Url(options.publicKey.user.id);
-      }
-
-      if (options.publicKey.excludeCredentials) {
-        serializedOptions.publicKey.excludeCredentials = options.publicKey.excludeCredentials.map(
-          (cred) => ({
-            ...cred,
-            id: arrayBufferToBase64Url(cred.id),
-          }),
-        );
-      }
-
-      if (options.publicKey.allowCredentials) {
-        serializedOptions.publicKey.allowCredentials = options.publicKey.allowCredentials.map(
-          (cred) => ({
-            ...cred,
-            id: arrayBufferToBase64Url(cred.id),
-          }),
-        );
-      }
-    }
-
-    return serializedOptions;
+  // Emulate platform authenticator presence
+  if ('PublicKeyCredential' in window) {
+    const pkc: any = window.PublicKeyCredential;
+    pkc.isUserVerifyingPlatformAuthenticatorAvailable = async () => true;
+    pkc.isConditionalMediationAvailable = async () => true;
   }
 })();

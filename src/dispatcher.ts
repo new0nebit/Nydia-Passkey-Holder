@@ -1,7 +1,7 @@
-import browser                                       from 'browser-api';
+import browser from 'browser-api';
 
-import { base64UrlEncode, base64UrlToArrayBuffer }   from './base64url';
-import { Account, WebAuthnOperationType }            from './types';
+import { base64UrlEncode, base64UrlToArrayBuffer } from './base64url';
+import { Account, WebAuthnOperationType } from './types';
 
 // Define global popup interface for cross-script communication between content script and injected page script.
 declare global {
@@ -405,7 +405,7 @@ class WebAuthnInterceptor {
         rawId: toArrayBuffer(parsedResponse.rawId || parsedResponse.id)!,
         response: attestationResponse,
         getClientExtensionResults: () => ({}),
-        authenticatorAttachment: parsedResponse.authenticatorAttachment || null,
+        authenticatorAttachment: 'platform',
       };
 
       console.debug('[Dispatcher] Created credential:', credential);
@@ -425,7 +425,7 @@ class WebAuthnInterceptor {
         rawId: toArrayBuffer(parsedResponse.rawId || parsedResponse.id)!,
         response: assertionResponse,
         getClientExtensionResults: () => ({}),
-        authenticatorAttachment: parsedResponse.authenticatorAttachment || null,
+        authenticatorAttachment: 'platform',
       };
 
       return credential;

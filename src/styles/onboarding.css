@@ -1,0 +1,256 @@
+/* ============================= */
+/*    Nydia Onboarding Styles    */
+/* ============================= */
+
+/* ---------- Base color-scheme ---------- */
+:root {
+  color-scheme: light dark;
+  /* Light palette */
+  --bg-primary: #fff;
+  --bg-secondary: #f3f4f6;
+  --bg-input: #fff;
+  --bg-success: #dcfce7;
+  --text-primary: #1a202c;
+  --text-secondary: #6b7280;
+  --border: #e5e7eb;
+  --accent-gradient: linear-gradient(to right, #fb923c, #f87171);
+  --accent-orange: #fb923c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Dark palette */
+    --bg-primary: #1a202c;
+    --bg-secondary: #374151;
+    --bg-input: #374151;
+    --bg-success: #065f46;
+    --text-primary: #fff;
+    --text-secondary: #9ca3af;
+    --border: #4b5563;
+    --accent-orange: #fb923c;
+  }
+}
+
+/* ---------- Global helpers ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.onboarding-container,
+.seed-input,
+.seed-grid {
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+/* ---------- Layout ---------- */
+.onboarding-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: -20px -20px -30px;
+  padding: 20px 20px 30px;
+  position: relative;
+  z-index: 1;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.content-wrapper {
+  width: 100%;
+  max-width: 28rem;
+  padding: 2rem;
+}
+
+.flex-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+/* ---------- Typography ---------- */
+.logo {
+  font-size: 2.25rem;
+  font-weight: 700;
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.title,
+.description,
+.subtitle,
+.info-text {
+  text-align: center;
+}
+
+.title {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.description {
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+
+.subtitle,
+.info-text {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+/* ---------- Buttons ---------- */
+.btn,
+.btn-restore,
+.btn-back {
+  all: unset;
+  display: inline-block;
+  padding: 0.5rem 1.5rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  text-align: center;
+  transition: box-shadow 0.2s, color 0.2s, transform 0.2s, background-color 0.2s, border-color 0.2s;
+}
+
+/* Primary button */
+.btn {
+  background: var(--accent-gradient);
+  color: #fff;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.btn:hover {
+  box-shadow: 0 6px 8px -1px rgba(0, 0, 0, 0.15);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Secondary button */
+.btn-restore {
+  background: transparent;
+  border: 1px solid #fb923c;
+  color: #fb923c;
+}
+
+@media (prefers-color-scheme: dark) {
+  .btn-restore {
+    color: #fb923c;
+  }
+}
+
+/* Navigation button */
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-secondary);
+  padding: 0.5rem 1.5rem;
+  position: relative;
+  border: 1px solid var(--accent-orange);
+  background: transparent;
+  transition: all 0.2s;
+  border-radius: 0.5rem;
+}
+
+.btn-back::before {
+  content: "←";
+  margin-right: 0.5rem;
+  transition: transform 0.2s;
+}
+
+.btn-back:hover {
+  color: var(--accent-orange);
+  background: var(--bg-secondary);
+}
+
+.btn-back:hover::before {
+  transform: translateX(-3px);
+}
+
+/* ---------- Seed phrase display ---------- */
+.seed-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 24rem;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  background: var(--bg-secondary);
+}
+
+.seed-word {
+  display: flex;
+  align-items: center;
+}
+
+.word-number {
+  margin-right: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.word {
+  font-family: monospace;
+}
+
+/* ---------- Seed phrase input ---------- */
+.seed-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  padding: 0.75rem;
+  min-height: 100px;
+  font-family: monospace;
+  resize: none;
+}
+
+/* ---------- Checkbox styles ---------- */
+.checkbox-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.checkbox {
+  width: 1rem;
+  height: 1rem;
+}
+
+.checkbox-label {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ---------- Status ---------- */
+.success-icon {
+  width: 4rem;
+  height: 4rem;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-success);
+}
+
+.error-message {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: #ef4444;
+}
+
+/* ---------- Utilities ---------- */
+.hidden {
+  display: none;
+}
