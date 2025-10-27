@@ -21,10 +21,15 @@ h2 {
 /* Passkey list container */
 #passkey-list {
   list-style: none;
-  padding: 0;
+  padding: 0 !important;
   margin: 0;
-  max-height: calc(570px - 60px);
+  flex: 1;
+  min-height: 0;
+  max-height: calc(4 * 116px + 3 * 6px);
   overflow-y: auto;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
 }
 
 /* Passkey items */
@@ -33,7 +38,7 @@ h2 {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 12px;
-  margin-bottom: 8px;
+  margin-bottom: 0 !important;
   transition: box-shadow 0.2s ease;
 }
 
