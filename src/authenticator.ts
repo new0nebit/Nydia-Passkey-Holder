@@ -299,12 +299,17 @@ export async function createCredential(options: any): Promise<any> {
     );
     logAuth('Client data JSON created');
 
-    // Encode attestation object
-    const attestationObject = WebAuthnCBOR.encode({
-      fmt: 'none',
-      authData: authenticatorData,
-      attStmt: {},
-    });
+    // Build attestationObject as a Map (not a plain object).
+    // Our CBOR encoder sorts map keys by the bytewise lexicographic order of
+    // their CBOR encodings (RFC 8949 §4.2.1), which matches CTAP2’s canonical
+    // CBOR expectations for string keys. For "fmt", "attStmt", and "authData",
+    // this yields the required key order "fmt" → "attStmt" → "authData".
+    const attestationMap = new Map<string, any>([
+      ['fmt', 'none'],
+      ['attStmt', new Map()],
+      ['authData', authenticatorData],
+    ]);
+    const attestationObject = WebAuthnCBOR.encode(attestationMap);
     logAuth('Attestation object created');
 
     // Construct the response
