@@ -1,5 +1,5 @@
-// NOTE: This CBOR implementation is specifically tailored for WebAuthn operations,
-// providing only the necessary subset for authenticator tasks and COSE key support (EC2, RSA, OKP).
+// NOTE: This CBOR implementation is tailored for WebAuthn.
+// It implements only the subset needed for authenticator operations and COSE keys (EC2, RSA, OKP).
 
 // Encode and decode CBOR data for WebAuthn operations.
 export class WebAuthnCBOR {
@@ -82,15 +82,36 @@ class CBORWriter {
     return this.data.subarray(0, this.size);
   }
 
+  // Encode a single value to CBOR bytes (helper for deterministic key sorting).
+  private static encodeOne(value: any): Uint8Array {
+    const writer = new CBORWriter(32);
+    writer.write(value);
+    return writer.getResult();
+  }
+
+  // Compare two keys by the bytewise lexicographic order of their CBOR encodings.
+  // Per the CTAP2 spec: "These rules are equivalent to a lexicographical
+  // comparison of the canonical encoding of keys for major types 0-3 and 7
+  // (integers, strings, and simple values)." We only use integer and string
+  // keys in WebAuthn structures (COSE_Key, attestationObject, attStmt), so
+  // this ordering matches CTAP2 canonical CBOR for our purposes.
+  private static compareCborKeys(a: any, b: any): number {
+    const A = CBORWriter.encodeOne(a);
+    const B = CBORWriter.encodeOne(b);
+
+    // Bytewise lexicographic comparison:
+    const n = Math.min(A.length, B.length);
+    for (let i = 0; i < n; i++) {
+      const diff = A[i] - B[i];
+      if (diff !== 0) return diff;
+    }
+    // If one is a prefix of the other, the shorter sorts first.
+    return A.length - B.length;
+  }
+
   // Encode a value into the CBOR writer based on its type.
   write(value: any): void {
-    if (value === false) {
-      this.writeByte(0xf4); // False
-    } else if (value === true) {
-      this.writeByte(0xf5); // True
-    } else if (value === null) {
-      this.writeByte(0xf6); // Null
-    } else if (typeof value === 'number') {
+    if (typeof value === 'number') {
       if (Number.isInteger(value)) {
         this.encodeInteger(value);
       } else {
@@ -100,12 +121,8 @@ class CBORWriter {
       this.encodeString(value);
     } else if (value instanceof Uint8Array) {
       this.encodeByteString(value);
-    } else if (Array.isArray(value)) {
-      this.encodeArray(value);
     } else if (value instanceof Map) {
-      this.encodeMapFromMap(value);
-    } else if (typeof value === 'object' && value !== null) {
-      this.encodeMapFromObject(value);
+      this.encodeMap(value);
     } else {
       throw new Error(`Unsupported type during CBOR encoding: ${typeof value}`);
     }
@@ -134,32 +151,21 @@ class CBORWriter {
     this.writeBytes(utf8data);
   }
 
-  private encodeArray(value: any[]): void {
-    this.encodeMajorType(4, value.length);
-    for (const item of value) {
-      this.write(item);
-    }
-  }
+  // Encode a Map as a CBOR map with deterministic key order compatible with
+  // CTAP2 expectations for WebAuthn structures.
+  private encodeMap(map: Map<any, any>): void {
+    // Collect entries and sort them by the bytewise lexicographic order of their
+    // CBOR-encoded keys. For the string and integer keys used in WebAuthn
+    // structures (attestationObject, attStmt, COSE_Key), this matches CTAP2’s
+    // canonical CBOR requirements.
+    const entries = Array.from(map.entries());
+    entries.sort((a, b) => CBORWriter.compareCborKeys(a[0], b[0]));
 
-  private encodeMapFromMap(map: Map<any, any>): void {
-    this.encodeMajorType(5, map.size);
-    for (const [key, val] of map) {
+    // Major type 5 = map
+    this.encodeMajorType(5, entries.length);
+    for (const [key, value] of entries) {
       this.write(key);
-      this.write(val);
-    }
-  }
-
-  private encodeMapFromObject(value: { [key: string]: any }): void {
-    const keys = Object.keys(value);
-    this.encodeMajorType(5, keys.length);
-    for (const key of keys) {
-      const keyNum = parseInt(key, 10);
-      if (isNaN(keyNum)) {
-        this.write(key);
-      } else {
-        this.write(keyNum);
-      }
-      this.write(value[key]);
+      this.write(value);
     }
   }
 
