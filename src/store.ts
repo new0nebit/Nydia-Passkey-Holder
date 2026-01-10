@@ -4,7 +4,16 @@ import { Ed25519, ES256, RS256, SigningAlgorithm } from './algorithms';
 import { base64UrlDecode, base64UrlEncode } from './base64url';
 import { logError } from './logger';
 import { uploadPasskeyDirect } from './sia';
-import { RenterdSettings, StoredCredential, EncryptedRecord } from './types';
+import {
+  BackgroundMessage,
+  EncryptedRecord,
+  GetAssertionOptions,
+  RenterdSettings,
+  SerializedCredentialDescriptor,
+  SerializedRequestOptions,
+  StoredCredential,
+} from './types';
+import { toArrayBuffer } from './utils/buffer';
 
 // Web Crypto API
 const subtle = crypto.subtle;
@@ -14,18 +23,18 @@ const counterLocks: Map<string, Promise<void>> = new Map();
 
 // Check background context
 export function isBackgroundContext(): boolean {
-  // Service Worker
-  if (typeof ServiceWorkerGlobalScope !== 'undefined' &&
-      self instanceof ServiceWorkerGlobalScope) {
-    return true;
-  }
+  const globalObj = globalThis as {
+    ServiceWorkerGlobalScope?: new () => unknown;
+  };
 
-  // Background Page
+  const isServiceWorkerScope =
+    typeof globalObj.ServiceWorkerGlobalScope === 'function' &&
+    self instanceof globalObj.ServiceWorkerGlobalScope;
+
+  if (isServiceWorkerScope) return true;
+
   if (typeof window !== 'undefined' && typeof browser !== 'undefined') {
-    const bgUrls = [
-      browser.runtime.getURL('_generated_background_page.html'),
-    ];
-    
+    const bgUrls = [browser.runtime.getURL('_generated_background_page.html')];
     if (bgUrls.includes(window.location.href)) {
       return true;
     }
@@ -34,8 +43,35 @@ export function isBackgroundContext(): boolean {
   return false;
 }
 
-async function sendMessageToExtension(msg: any): Promise<any> {
-  return isBackgroundContext() ? handleMessageInBackground(msg) : browser.runtime.sendMessage(msg);
+async function sendMessageToExtension<T = unknown>(msg: BackgroundMessage): Promise<T> {
+  return isBackgroundContext()
+    ? ((handleMessageInBackground(msg) as unknown) as Promise<T>)
+    : (browser.runtime.sendMessage(msg) as Promise<T>);
+}
+
+type FindCredentialOptions = SerializedRequestOptions | GetAssertionOptions;
+
+// Helper function to extract rpId from various option formats
+function extractRpId(options: FindCredentialOptions): string | undefined {
+  if (!options || typeof options !== 'object') return undefined;
+
+  const opts = options as { publicKey?: unknown; origin?: string };
+  if (!opts.publicKey || typeof opts.publicKey !== 'object') {
+    // Fallback to origin
+    return opts.origin ? new URL(opts.origin).hostname : undefined;
+  }
+
+  const pk = opts.publicKey as { rpId?: string; rp?: { id?: string } };
+  return pk.rpId ?? pk.rp?.id ?? (opts.origin ? new URL(opts.origin).hostname : undefined);
+}
+
+// Helper function to normalize credential ID to string
+function normalizeCredentialId(id: unknown): string | undefined {
+  if (typeof id === 'string') return id;
+  if (id instanceof ArrayBuffer || ArrayBuffer.isView(id)) {
+    return base64UrlEncode(new Uint8Array(toArrayBuffer(id)));
+  }
+  return undefined;
 }
 
 // IndexedDB
@@ -69,11 +105,12 @@ async function getMasterKey(): Promise<CryptoKey> {
   if (masterKey) return masterKey;
 
   const db = await openDatabase();
-  const item = await new Promise<any>((res) => {
+  const item = await new Promise<{ key?: CryptoKey } | undefined>((res) => {
     db
       .transaction(SETTINGS_STORE, 'readonly')
       .objectStore(SETTINGS_STORE)
-      .get('ephemeralKey').onsuccess = (e) => res((e.target as any).result);
+      .get('ephemeralKey').onsuccess = (e) =>
+        res((e.target as IDBRequest<{ key?: CryptoKey }>).result);
   });
 
   if (item?.key) {
@@ -96,20 +133,22 @@ async function encryptCredential(c: StoredCredential): Promise<EncryptedRecord> 
     new TextEncoder().encode(JSON.stringify(withoutSync)),
   );
 
-  return {
+  const record: EncryptedRecord = {
     uniqueId: c.uniqueId,
     iv: base64UrlEncode(iv),
     data: base64UrlEncode(new Uint8Array(ct)),
     isSynced: isSynced,
-  } as any;
+  };
+  return record;
 }
 
 async function decryptCredential(r: EncryptedRecord): Promise<StoredCredential> {
   const key = await getMasterKey();
+  const iv = new Uint8Array(base64UrlDecode(r.iv));
   const pt = await subtle.decrypt(
-    { name: 'AES-GCM', iv: base64UrlDecode(r.iv) },
+    { name: 'AES-GCM', iv },
     key,
-    base64UrlDecode(r.data),
+    new Uint8Array(base64UrlDecode(r.data)),
   );
   const sc: StoredCredential = JSON.parse(new TextDecoder().decode(pt));
   sc.isSynced = r.isSynced ?? false;
@@ -129,11 +168,12 @@ export async function saveSettings(settings: RenterdSettings): Promise<void> {
 
 export async function getSettings(): Promise<RenterdSettings | null> {
   const db = await openDatabase();
-  return new Promise((res) => {
+  return new Promise<RenterdSettings | null>((res) => {
     db
       .transaction(SETTINGS_STORE, 'readonly')
       .objectStore(SETTINGS_STORE)
-      .get('renterdSettings').onsuccess = (e) => res((e.target as any).result ?? null);
+      .get('renterdSettings').onsuccess = (e) =>
+        res((e.target as IDBRequest<RenterdSettings>).result ?? null);
   });
 }
 
@@ -155,7 +195,8 @@ export async function getAllStoredCredentialsFromDB(): Promise<StoredCredential[
     db
       .transaction(STORE_NAME, 'readonly')
       .objectStore(STORE_NAME)
-      .getAll().onsuccess = (e) => res((e.target as any).result);
+      .getAll().onsuccess = (e) =>
+        res((e.target as IDBRequest<EncryptedRecord[]>).result ?? []);
   });
 
   const out: StoredCredential[] = [];
@@ -184,7 +225,8 @@ export async function getEncryptedCredentialByUniqueId(
     db
       .transaction(STORE_NAME, 'readonly')
       .objectStore(STORE_NAME)
-      .get(uniqueId).onsuccess = (e) => res((e.target as any).result ?? null);
+      .get(uniqueId).onsuccess = (e) =>
+        res((e.target as IDBRequest<EncryptedRecord>).result ?? null);
   });
 }
 
@@ -278,9 +320,9 @@ export async function loadPrivateKey(
 
   const key = await getMasterKey();
   const pkcs8 = await subtle.decrypt(
-    { name: 'AES-GCM', iv: base64UrlDecode(rec.iv) },
+    { name: 'AES-GCM', iv: new Uint8Array(base64UrlDecode(rec.iv)) },
     key,
-    base64UrlDecode(rec.privateKey),
+    new Uint8Array(base64UrlDecode(rec.privateKey)),
   );
 
   let params: EcKeyImportParams | RsaHashedImportParams | Algorithm;
@@ -308,14 +350,16 @@ export async function loadPrivateKey(
 }
 
 // Messaging in Background Context
-export async function handleMessageInBackground(message: any): Promise<any> {
+export async function handleMessageInBackground(message: BackgroundMessage): Promise<unknown> {
   try {
     switch (message.type) {
       case 'saveStoredCredential':
-        await saveStoredCredential(message.storedCredential);
+        if (!message.storedCredential) return { error: 'missing storedCredential' };
+        await saveStoredCredential(message.storedCredential as StoredCredential);
         return { status: 'ok' };
 
       case 'getStoredCredential':
+        if (typeof message.credentialId !== 'string') return { error: 'invalid credentialId' };
         return (
           (await getStoredCredentialByCredentialId(message.credentialId)) ?? { error: 'not found' }
         );
@@ -325,7 +369,14 @@ export async function handleMessageInBackground(message: any): Promise<any> {
 
       case 'findCredential': {
         const list = await getAllStoredCredentialsFromDB();
-        const rp = message.options.publicKey?.rpId ?? new URL(message.options.origin).hostname;
+        const opts = message.options;
+
+        if (!opts || typeof opts !== 'object' || !('publicKey' in opts) || !opts.publicKey) {
+          return { error: 'Invalid options' };
+        }
+
+        const rp = extractRpId(opts);
+        if (!rp) return { error: 'Missing rpId' };
 
         if (message.selectedCredentialId) {
           const found = list.find(
@@ -334,9 +385,13 @@ export async function handleMessageInBackground(message: any): Promise<any> {
           return found ?? { error: 'not found' };
         }
 
-        if (message.options.allowCredentials?.length) {
-          for (const ac of message.options.allowCredentials) {
-            const id = typeof ac.id === 'string' ? ac.id : base64UrlEncode(new Uint8Array(ac.id));
+        const allowCredentials = (opts.publicKey as { allowCredentials?: SerializedCredentialDescriptor[] })
+          ?.allowCredentials;
+
+        if (Array.isArray(allowCredentials) && allowCredentials.length) {
+          for (const ac of allowCredentials) {
+            const id = normalizeCredentialId(ac.id);
+            if (!id) continue;
             const found = list.find((c) => c.credentialId === id && c.rpId === rp);
             if (found) return found;
           }
@@ -345,30 +400,41 @@ export async function handleMessageInBackground(message: any): Promise<any> {
       }
 
       case 'updateCredentialCounter':
+        if (typeof message.credentialId !== 'string') return { error: 'invalid credentialId' };
         await updateCredentialCounter(message.credentialId);
         return { status: 'ok' };
 
       default:
         throw new Error(`Unknown message type: ${message.type}`);
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
     logError('[store] background handler error', e);
-    return { error: e?.message ?? String(e) };
+    const message = e instanceof Error ? e.message : String(e);
+    return { error: message };
   }
 }
 
 // Foreground Proxies
 export async function findCredential(
-  options: any,
+  options: SerializedRequestOptions | GetAssertionOptions,
   selectedCredentialId?: string,
 ): Promise<StoredCredential> {
-  const r = await sendMessageToExtension({ type: 'findCredential', options, selectedCredentialId });
-  if (r?.error) throw new Error(r.error);
+  const r = await sendMessageToExtension<StoredCredential | { error: string }>({
+    type: 'findCredential',
+    options,
+    selectedCredentialId,
+  });
+  if ('error' in r) throw new Error(r.error);
   return r;
 }
 
 export async function getAllStoredCredentials(): Promise<StoredCredential[]> {
-  const r = await sendMessageToExtension({ type: 'getAllStoredCredentials' });
-  if (r?.error) throw new Error(r.error);
-  return Array.isArray(r) ? r : [];
+  const r = await sendMessageToExtension<StoredCredential[] | { error: string }>({
+    type: 'getAllStoredCredentials',
+  });
+  if (!Array.isArray(r)) {
+    if ('error' in r) throw new Error(r.error);
+    return [];
+  }
+  return r;
 }
