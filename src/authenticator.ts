@@ -10,7 +10,15 @@ import {
   savePrivateKey,
   updateCredentialCounter,
 } from './store';
-import { Account } from './types';
+import {
+  Account,
+  AssertionResponse,
+  AttestationResponse,
+  CredentialCreationOptions,
+  GetAssertionOptions,
+  PublicKeyCredentialCreationOptions,
+} from './types';
+import { toArrayBuffer } from './utils/buffer';
 
 type AttestationCborMap = CBORValue;
 
@@ -25,18 +33,17 @@ const AAGUID: Uint8Array = new Uint8Array([
   0x79, 0x64, 0x69, 0x61
 ]);
 
-function logAuth(message: string, data?: any): void {
+function logAuth(message: string, data?: unknown): void {
   if (data !== undefined) {
-    console.log(`[Authenticator] ${message}:`, data);
+    logInfo(`[Authenticator] ${message}`, data);
   } else {
-    console.log(`[Authenticator] ${message}`);
+    logInfo(`[Authenticator] ${message}`);
   }
 }
 
 // Hash data using SHA-256 algorithm.
 async function sha256(data: ArrayBuffer | Uint8Array): Promise<ArrayBuffer> {
-  const buffer = data instanceof ArrayBuffer ? data : data.buffer;
-  return await subtle.digest('SHA-256', buffer);
+  return await subtle.digest('SHA-256', toArrayBuffer(data));
 }
 
 // Create random byte array of given size.
@@ -107,7 +114,13 @@ function rawToDer(rawSignature: ArrayBuffer): ArrayBuffer {
 }
 
 // Chooses a signing algorithm.
-function chooseAlgorithm(params: any[]): SigningAlgorithm {
+function chooseAlgorithm(
+  params: PublicKeyCredentialCreationOptions['pubKeyCredParams'],
+): SigningAlgorithm {
+  if (!params) {
+    throw new Error('No supported algorithm found');
+  }
+
   for (const param of params) {
     if (param.alg === -7) {
       return new ES256();
@@ -130,7 +143,9 @@ function bufferToHex(buffer: Uint8Array): string {
 }
 
 // Create a new credential.
-export async function createCredential(options: any): Promise<any> {
+export async function createCredential(
+  options: CredentialCreationOptions,
+): Promise<AttestationResponse | null> {
   logAuth('Starting credential creation...');
   logAuth('Options:', options);
 
@@ -142,16 +157,13 @@ export async function createCredential(options: any): Promise<any> {
     // Process options.publicKey.user.id
     let userId: ArrayBuffer;
     if (typeof options.publicKey.user.id === 'string') {
-      userId = base64UrlDecode(options.publicKey.user.id).buffer;
+      userId = toArrayBuffer(options.publicKey.user.id);
       logAuth('userId decoded from string');
     } else if (options.publicKey.user.id instanceof ArrayBuffer) {
-      userId = options.publicKey.user.id;
+      userId = toArrayBuffer(options.publicKey.user.id);
       logAuth('userId is ArrayBuffer');
     } else if (ArrayBuffer.isView(options.publicKey.user.id)) {
-      userId = options.publicKey.user.id.buffer.slice(
-        options.publicKey.user.id.byteOffset,
-        options.publicKey.user.id.byteOffset + options.publicKey.user.id.byteLength,
-      );
+      userId = toArrayBuffer(options.publicKey.user.id);
       logAuth('userId is ArrayBufferView');
     } else {
       logAuth(`Invalid user.id type: ${typeof options.publicKey.user.id}`);
@@ -314,7 +326,7 @@ export async function createCredential(options: any): Promise<any> {
     logAuth('Attestation object created');
 
     // Construct the response
-    const createResponse = {
+    const createResponse: AttestationResponse = {
       type: 'public-key',
       id: credentialIdEncoded,
       rawId: credentialIdEncoded,
@@ -331,17 +343,18 @@ export async function createCredential(options: any): Promise<any> {
     logAuth('Credential:', createResponse);
 
     return createResponse;
-  } catch (error: any) {
-    logError(`Error in createCredential: ${error.message}`, error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logError(`Error in createCredential: ${errorMessage}`, error);
     throw error;
   }
 }
 
 // Process get assertion operation by finding credential and signing challenge
 export async function handleGetAssertion(
-  options: any,
+  options: GetAssertionOptions,
   selectedCredentialId?: string,
-): Promise<any> {
+): Promise<AssertionResponse> {
   logAuth('Starting assertion handling...');
   logAuth('Assertion options:', options);
 
@@ -356,11 +369,11 @@ export async function handleGetAssertion(
 
   if (typeof options.publicKey.challenge === 'string') {
     // Challenge as base64url string
-    challengeBuffer = base64UrlDecode(options.publicKey.challenge);
+    challengeBuffer = new Uint8Array(toArrayBuffer(options.publicKey.challenge));
     challengeString = options.publicKey.challenge;
   } else {
     // Challenge as ArrayBuffer
-    challengeBuffer = new Uint8Array(options.publicKey.challenge);
+    challengeBuffer = new Uint8Array(toArrayBuffer(options.publicKey.challenge));
     challengeString = base64UrlEncode(challengeBuffer);
   }
 
@@ -482,7 +495,7 @@ export async function handleGetAssertion(
   await updateCredentialCounter(storedCredential.credentialId);
 
   // Construct the response
-  const response = {
+  const response: AssertionResponse = {
     type: 'public-key',
     id: storedCredential.credentialId,
     rawId: storedCredential.credentialId,
