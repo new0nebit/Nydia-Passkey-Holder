@@ -1,26 +1,34 @@
 import browser from 'browser-api';
 
-import { 
+import {
   createCredential,
   getAvailableCredentials,
   handleGetAssertion,
   initializeAuthenticator,
 } from './authenticator';
-import { base64UrlToArrayBuffer } from './base64url';
 import { logError, logInfo } from './logger';
-import { 
+import {
   downloadPasskeyFromRenterd,
   getPasskeysFromRenterd,
   uploadPasskeyDirect,
 } from './sia';
-import { 
-  handleMessageInBackground,
-  getSettings,
-  saveEncryptedCredential,
+import {
   getEncryptedCredentialByUniqueId,
+  getSettings,
+  handleMessageInBackground,
   isBackgroundContext,
+  saveEncryptedCredential,
 } from './store';
-import { EncryptedRecord } from './types';
+import {
+  BackgroundMessage,
+  CredentialCreationOptions,
+  EncryptedRecord,
+  GetAssertionOptions,
+  SerializedCreationOptions,
+  SerializedCredentialDescriptor,
+  SerializedRequestOptions,
+} from './types';
+import { toArrayBuffer } from './utils/buffer';
 
 // IndexedDB
 const DB_NAME = 'NydiaDB';
@@ -53,9 +61,12 @@ async function loadMasterKey(): Promise<CryptoKey | null> {
 
   const db = await openDB();
   const rec = await new Promise<{ key?: CryptoKey } | undefined>((r) => {
-    db.transaction('settings', 'readonly').objectStore('settings').get('ephemeralKey').onsuccess = (
-      e,
-    ) => r((e.target as any).result);
+    const request = db
+      .transaction('settings', 'readonly')
+      .objectStore('settings')
+      .get('ephemeralKey');
+
+    request.onsuccess = () => r(request.result);
   });
 
   if (rec?.key) {
@@ -112,48 +123,99 @@ function secureCleanup(data: Uint8Array | number[] | null): void {
 }
 
 // Firefox self-send patch
-function patchSelfSend(local: (m: any) => Promise<any>) {
+function patchSelfSend(local: (m: BackgroundMessage) => Promise<unknown>) {
   const rt = browser.runtime;
   if (!rt?.sendMessage) return;
 
   const myId = rt.id;
   const orig = rt.sendMessage.bind(rt);
 
-  rt.sendMessage = ((...args: any[]) => {
-    let extId: string | undefined, msg: any;
-    if (args.length === 1) msg = args[0];
-    else [extId, msg] = args;
+  rt.sendMessage = ((...args: unknown[]) => {
+    let extId: string | undefined;
+    let msg: BackgroundMessage;
 
-    return !extId || extId === myId ? local(msg) : orig(...(args as any));
+    if (args.length === 1) {
+      msg = args[0] as BackgroundMessage;
+    } else {
+      extId = args[0] as string | undefined;
+      msg = args[1] as BackgroundMessage;
+    }
+
+    return !extId || extId === myId
+      ? local(msg)
+      : orig(...(args as Parameters<typeof rt.sendMessage>));
   }) as typeof rt.sendMessage;
 
   logInfo('runtime.sendMessage patched');
 }
 
-// Deserializes the options object by converting base64url strings to ArrayBuffers.
-function deserializeOptions(o: any): any {
-  const out = { ...o };
-  if (o.publicKey) {
-    const cv = base64UrlToArrayBuffer;
-    out.publicKey = { ...o.publicKey };
+function normalizeDescriptor(
+  arr?: SerializedCredentialDescriptor[],
+): PublicKeyCredentialDescriptor[] | undefined {
+  return arr?.map((cred) => ({
+    type: (cred.type ?? 'public-key') as PublicKeyCredentialType,
+    id: toArrayBuffer(cred.id),
+    transports: cred.transports as AuthenticatorTransport[] | undefined,
+  }));
+}
 
-    if (typeof o.publicKey.challenge === 'string')
-      out.publicKey.challenge = cv(o.publicKey.challenge);
+function toCreationOptions(options: SerializedCreationOptions): CredentialCreationOptions {
+  const { publicKey } = options;
 
-    if (o.publicKey.user && typeof o.publicKey.user.id === 'string')
-      out.publicKey.user = { ...o.publicKey.user, id: cv(o.publicKey.user.id) };
-
-    const map = (arr?: any[]) => arr?.map((c: any) => ({ ...c, id: cv(c.id) }));
-    out.publicKey.excludeCredentials = map(o.publicKey.excludeCredentials);
-    out.publicKey.allowCredentials = map(o.publicKey.allowCredentials);
+  if (!publicKey?.challenge || !publicKey.user || !publicKey.pubKeyCredParams) {
+    throw new Error('Invalid options');
   }
-  out.origin = o.origin;
-  return out;
+
+  if (!publicKey.rp?.name) {
+    throw new Error('Invalid RP info: rp.name is required');
+  }
+
+  const rpId = publicKey.rp.id ?? new URL(options.origin ?? '').hostname;
+
+  const rpEntity: PublicKeyCredentialRpEntity = {
+    id: rpId,
+    name: publicKey.rp.name,
+  };
+
+  return {
+    publicKey: {
+      rp: rpEntity,
+      rpId,
+      challenge: toArrayBuffer(publicKey.challenge),
+      user: {
+        ...(publicKey.user as CredentialCreationOptions['publicKey']['user']),
+        id: toArrayBuffer(publicKey.user.id),
+      },
+      pubKeyCredParams: publicKey.pubKeyCredParams,
+      excludeCredentials: normalizeDescriptor(publicKey.excludeCredentials),
+    },
+    origin: options.origin ?? '',
+  };
+}
+
+function toGetAssertionOptions(options: SerializedRequestOptions): GetAssertionOptions {
+  const { publicKey } = options;
+
+  if (!publicKey?.challenge) {
+    throw new Error('Invalid options: challenge is required');
+  }
+
+  const rpId = publicKey.rpId ?? new URL(options.origin ?? '').hostname;
+
+  return {
+    publicKey: {
+      ...publicKey,
+      rpId,
+      challenge: toArrayBuffer(publicKey.challenge),
+      allowCredentials: normalizeDescriptor(publicKey.allowCredentials),
+    },
+    origin: options.origin ?? '',
+  };
 }
 
 // Checks if the given object is a valid EncryptedRecord
-function isValidEncryptedRecord(x: any): x is EncryptedRecord {
-  return x && typeof x === 'object' && 'uniqueId' in x && 'iv' in x && 'data' in x;
+function isValidEncryptedRecord(x: unknown): x is EncryptedRecord {
+  return Boolean(x && typeof x === 'object' && 'uniqueId' in x && 'iv' in x && 'data' in x);
 }
 
 // Handles the upload of a single passkey to renterd
@@ -223,25 +285,33 @@ async function handleSyncFromSia() {
 }
 
 // Router
-async function router(msg: any): Promise<any> {
+async function router(msg: BackgroundMessage): Promise<unknown> {
   try {
     switch (msg.type) {
       case 'createCredential':
         if (!(await loadMasterKey())) return { error: 'masterKeyMissing' };
-        return createCredential(deserializeOptions(msg.options));
+        if (!msg.options?.publicKey) return { error: 'Invalid options' };
+        return createCredential(toCreationOptions(msg.options as SerializedCreationOptions));
 
       case 'handleGetAssertion':
         if (!(await loadMasterKey())) return { error: 'masterKeyMissing' };
-        return handleGetAssertion(deserializeOptions(msg.options), msg.selectedCredentialId);
+        if (!msg.options?.publicKey) return { error: 'Invalid options' };
+        return handleGetAssertion(
+          toGetAssertionOptions(msg.options as SerializedRequestOptions),
+          msg.selectedCredentialId,
+        );
 
       case 'getAvailableCredentials':
+        if (!msg.rpId) return { error: 'Missing rpId' };
         return getAvailableCredentials(msg.rpId);
 
       // Use uniqueId
       case 'uploadToSia':
+        if (!msg.uniqueId) return { error: 'Missing uniqueId' };
         return handleUploadToSia(msg.uniqueId);
 
       case 'uploadUnsyncedPasskeys':
+        if (!msg.uniqueIds) return { error: 'Missing uniqueIds' };
         return handleUploadUnsyncedPasskeys(msg.uniqueIds);
 
       case 'syncFromSia':
@@ -263,7 +333,7 @@ async function router(msg: any): Promise<any> {
             algorithm: 'RSA-OAEP',
             hash: 'SHA-256',
           };
-        } catch (e: any) {
+        } catch (e: unknown) {
           logError('Failed to export public key', e);
           return { error: 'Failed to generate wrapping key' };
         }
@@ -309,7 +379,7 @@ async function router(msg: any): Promise<any> {
 
           logInfo('Master key securely stored and RSA keys cleaned up');
           return { status: 'ok' };
-        } catch (e: any) {
+        } catch (e: unknown) {
           logError('Failed to unwrap and store key', e);
 
           // Clean up on error too
@@ -334,17 +404,19 @@ async function router(msg: any): Promise<any> {
       default:
         return handleMessageInBackground(msg);
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
     logError('router error', e);
-    return { error: e?.message ?? String(e) };
+    const message = e instanceof Error ? e.message : String(e);
+    return { error: message };
   }
 }
 
 // Bootstrap
 logInfo('bootstrap');
 logInfo('isBackgroundContext', isBackgroundContext());
+
 patchSelfSend(router);
-browser.runtime.onMessage.addListener(router);
+browser.runtime.onMessage.addListener((message: unknown) => router(message as BackgroundMessage));
 
 initializeAuthenticator();
 loadMasterKey().catch(logError);
