@@ -1,5 +1,4 @@
 import { Ed25519, ES256, RS256, SigningAlgorithm } from './algorithms';
-import { base64UrlDecode, base64UrlEncode } from './base64url';
 import { CBORValue, WebAuthnCBOR } from './cbor';
 import { logError, logInfo } from './logger';
 import {
@@ -18,6 +17,7 @@ import {
   GetAssertionOptions,
   PublicKeyCredentialCreationOptions,
 } from './types';
+import { base64UrlDecode, base64UrlEncode } from './utils/base64url';
 import { toArrayBuffer } from './utils/buffer';
 
 type AttestationCborMap = CBORValue;
