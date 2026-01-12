@@ -9,6 +9,7 @@ export default (env, argv) => {
   const isAnalyze = env && env.analyze;
   const isDevelopment = argv.mode === 'development';
   const target = env && env.target === 'firefox' ? 'firefox' : 'chrome';
+  const keepDebugLogs = env?.keepDebug === true || env?.keepDebug === 'true';
 
   // Set output directory based on browser target
   const outputDir = path.join('extension', target);
@@ -107,6 +108,14 @@ export default (env, argv) => {
         new TerserPlugin({
           extractComments: false,
           terserOptions: {
+            ...(keepDebugLogs
+              ? {}
+              : {
+                  compress: {
+                    // Drop debug logging in production builds while keeping info/warn/error.
+                    pure_funcs: ['console.debug'],
+                  },
+                }),
             format: {
               comments: false,
             },
