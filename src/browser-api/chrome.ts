@@ -3,13 +3,15 @@
  * Implements Promise-based WebExtensions API.
  */
 
+import { logError } from '../logger';
+
 const runtime = {
   sendMessage: (message: unknown): Promise<unknown> => {
     return new Promise((resolve) => {
       // Wrap Chrome's callback API with Promises
       chrome.runtime.sendMessage(message, (response) => {
         if (chrome.runtime.lastError) {
-          console.error('Chrome runtime error:', chrome.runtime.lastError);
+          logError('[Chrome] runtime error', chrome.runtime.lastError);
           resolve({ error: chrome.runtime.lastError.message });
           return;
         }
@@ -40,7 +42,7 @@ const runtime = {
               sendResponse(response);
             })
             .catch((error) => {
-              console.error('Error in message listener:', error);
+              logError('[Chrome] Error in message listener', error);
               sendResponse({ error: error instanceof Error ? error.message : 'Unknown error' });
             });
 
@@ -56,7 +58,7 @@ const runtime = {
     return new Promise((resolve, reject) => {
       chrome.runtime.getBackgroundPage((backgroundPage) => {
         if (chrome.runtime.lastError) {
-          console.error('Error getting background page:', chrome.runtime.lastError);
+          logError('[Chrome] Error getting background page', chrome.runtime.lastError);
           reject(chrome.runtime.lastError);
           return;
         }
