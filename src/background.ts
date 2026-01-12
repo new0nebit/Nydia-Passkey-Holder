@@ -70,7 +70,7 @@ async function loadMasterKey(): Promise<CryptoKey | null> {
 
   if (rec?.key) {
     masterKey = rec.key;
-    logInfo('masterKey loaded');
+    logInfo('[Background] masterKey loaded');
   }
   return masterKey;
 }
@@ -84,12 +84,12 @@ async function persistKey(key: CryptoKey): Promise<void> {
       .put({ id: 'ephemeralKey', key }).onsuccess = () => r();
   });
   masterKey = key;
-  logInfo('masterKey persisted');
+  logInfo('[Background] masterKey persisted');
 }
 
 // RSA key pair generation for secure key transfer
 async function initializeWrappingKey(): Promise<CryptoKeyPair> {
-  logInfo('Generating RSA-OAEP key pair for secure transfer');
+  logInfo('[Background] Generating RSA-OAEP key pair for secure transfer');
 
   const keyPair = await crypto.subtle.generateKey(
     {
@@ -102,7 +102,7 @@ async function initializeWrappingKey(): Promise<CryptoKeyPair> {
     ['wrapKey', 'unwrapKey'],
   );
 
-  logInfo('RSA-OAEP key pair generated');
+  logInfo('[Background] RSA-OAEP key pair generated');
   return keyPair;
 }
 
@@ -145,7 +145,7 @@ function patchSelfSend(local: (m: BackgroundMessage) => Promise<unknown>) {
       : orig(...(args as Parameters<typeof rt.sendMessage>));
   }) as typeof rt.sendMessage;
 
-  logInfo('runtime.sendMessage patched');
+  logInfo('[Background] runtime.sendMessage patched');
 }
 
 function normalizeDescriptor(
@@ -239,20 +239,21 @@ async function handleUploadToSia(uniqueId: string) {
 
 // Handles uploading multiple unsynced passkeys to renterd
 async function handleUploadUnsyncedPasskeys(uniqueIds: string[]) {
-  let ok = 0,
-    fl = 0;
+  let uploaded = 0,
+    failed = 0;
 
   for (const uniqueId of uniqueIds) {
     try {
       const { success } = await handleUploadToSia(uniqueId);
-      if (success) ok++;
-      else fl++;
-    } catch {
-      fl++;
+      if (success) uploaded++;
+      else failed++;
+    } catch (e) {
+      logError(`[Background] Upload failed for ${uniqueId}`, e);
+      failed++;
     }
   }
 
-  return { success: fl === 0, uploadedCount: ok, failedCount: fl };
+  return { success: failed === 0, uploadedCount: uploaded, failedCount: failed };
 }
 
 // Handles syncing passkeys from renterd to the extension
@@ -264,9 +265,9 @@ async function handleSyncFromSia() {
   let synced = 0,
     failed = 0;
 
-  for (const f of files) {
+  for (const fileName of files) {
     try {
-      const encryptedRecord = await downloadPasskeyFromRenterd(f, settings);
+      const encryptedRecord = await downloadPasskeyFromRenterd(fileName, settings);
 
       if (!isValidEncryptedRecord(encryptedRecord)) {
         failed++;
@@ -276,7 +277,8 @@ async function handleSyncFromSia() {
       // Save encrypted record directly to DB
       await saveEncryptedCredential(encryptedRecord);
       synced++;
-    } catch {
+    } catch (e) {
+      logError(`[Background] Sync failed for ${fileName}`, e);
       failed++;
     }
   }
@@ -333,7 +335,7 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
             hash: 'SHA-256',
           };
         } catch (e: unknown) {
-          logError('Failed to export public key', e);
+          logError('[Background] Failed to export public key', e);
           return { error: 'Failed to generate wrapping key' };
         }
       }
@@ -376,10 +378,10 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
           secureCleanup(msg.wrappedKey);
           secureCleanup(wrappedKeyBytes);
 
-          logInfo('Master key securely stored and RSA keys cleaned up');
+          logInfo('[Background] Master key securely stored and RSA keys cleaned up');
           return { status: 'ok' };
         } catch (e: unknown) {
-          logError('Failed to unwrap and store key', e);
+          logError('[Background] Failed to unwrap and store key', e);
 
           // Clean up on error too
           wrappingKeyPair = null;
@@ -404,18 +406,18 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
         return handleMessageInBackground(msg);
     }
   } catch (e: unknown) {
-    logError('router error', e);
+    logError('[Background] router error', e);
     const message = e instanceof Error ? e.message : String(e);
     return { error: message };
   }
 }
 
 // Bootstrap
-logInfo('bootstrap');
-logInfo('isBackgroundContext', isBackgroundContext());
+logInfo('[Background] bootstrap');
+logInfo('[Background] isBackgroundContext', isBackgroundContext());
 
 patchSelfSend(router);
 browser.runtime.onMessage.addListener((message: unknown) => router(message as BackgroundMessage));
 
 loadMasterKey().catch(logError);
-logInfo('ready');
+logInfo('[Background] ready');

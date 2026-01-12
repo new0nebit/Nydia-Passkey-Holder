@@ -37,7 +37,7 @@ export class OnboardingController {
                 this.seedPhrase = s;
                 this.render();
               })
-              .catch((e) => logError('seed gen error', e));
+              .catch((e) => logError('[Onboarding] seed gen error', e));
             break;
           }
           content.append(this.viewShowSeed());
@@ -286,7 +286,7 @@ export class OnboardingController {
       this.step = 6;
       this.render();
     } catch (error) {
-      logError('Failed to securely store key', error);
+      logError('[Onboarding] Failed to securely store key', error);
 
       // Show error to user
       const errorEl = document.querySelector('.error-message');
