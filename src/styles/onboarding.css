@@ -178,11 +178,9 @@
 
 /* ---------- Seed phrase display ---------- */
 .seed-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: inline-grid;
+  grid-template-columns: repeat(3, max-content);
   gap: 0.5rem;
-  width: 100%;
-  max-width: 24rem;
   padding: 1rem;
   border-radius: 0.5rem;
   background: var(--bg-secondary);
@@ -191,6 +189,7 @@
 .seed-word {
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 
 .word-number {
