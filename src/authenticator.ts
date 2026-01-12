@@ -531,21 +531,3 @@ export async function getAvailableCredentials(rpId: string): Promise<Account[]> 
 
   return accounts;
 }
-
-// Set up the WebAuthn authenticator by loading stored credentials
-export function initializeAuthenticator(): void {
-  try {
-    logInfo('Initializing WebAuthn authenticator...');
-    getAllStoredCredentials()
-      .then((storedCredentials) => {
-        logInfo(`Found ${storedCredentials.length} stored credentials`);
-        logInfo('WebAuthn authenticator initialized successfully');
-      })
-      .catch((error) => {
-        logError('Error retrieving stored credentials during initialization', error);
-      });
-  } catch (error) {
-    logError('Error during authenticator initialization', error);
-    throw error;
-  }
-}
