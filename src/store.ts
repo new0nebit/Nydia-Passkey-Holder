@@ -75,8 +75,8 @@ function normalizeCredentialId(id: unknown): string | undefined {
 // IndexedDB
 const DB_NAME = 'NydiaDB';
 const DB_VERSION = 4;
-const STORE_NAME = 'storedCredentials';
-const SETTINGS_STORE = 'settings';
+export const STORE_NAME = 'storedCredentials';
+export const SETTINGS_STORE = 'settings';
 
 function setupStores(db: IDBDatabase) {
   if (!db.objectStoreNames.contains(STORE_NAME)) {
@@ -87,7 +87,7 @@ function setupStores(db: IDBDatabase) {
   }
 }
 
-function openDatabase(): Promise<IDBDatabase> {
+export function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => setupStores(req.result);
@@ -102,7 +102,7 @@ let masterKey: CryptoKey | null = null;
 async function getMasterKey(): Promise<CryptoKey> {
   if (masterKey) return masterKey;
 
-  const db = await openDatabase();
+  const db = await openDB();
   const item = await new Promise<{ key?: CryptoKey } | undefined>((res) => {
     db
       .transaction(SETTINGS_STORE, 'readonly')
@@ -155,7 +155,7 @@ async function decryptCredential(r: EncryptedRecord): Promise<StoredCredential> 
 
 // Settings Management
 export async function saveSettings(settings: RenterdSettings): Promise<void> {
-  const db = await openDatabase();
+  const db = await openDB();
   await new Promise<void>((res) => {
     db
       .transaction(SETTINGS_STORE, 'readwrite')
@@ -165,7 +165,7 @@ export async function saveSettings(settings: RenterdSettings): Promise<void> {
 }
 
 export async function getSettings(): Promise<RenterdSettings | null> {
-  const db = await openDatabase();
+  const db = await openDB();
   return new Promise<RenterdSettings | null>((res) => {
     db
       .transaction(SETTINGS_STORE, 'readonly')
@@ -178,7 +178,7 @@ export async function getSettings(): Promise<RenterdSettings | null> {
 // Stored Credential Management
 export async function saveStoredCredential(c: StoredCredential): Promise<void> {
   const enc = await encryptCredential(c);
-  const db = await openDatabase();
+  const db = await openDB();
   await new Promise<void>((res) => {
     db
       .transaction(STORE_NAME, 'readwrite')
@@ -188,7 +188,7 @@ export async function saveStoredCredential(c: StoredCredential): Promise<void> {
 }
 
 export async function getAllStoredCredentialsFromDB(): Promise<StoredCredential[]> {
-  const db = await openDatabase();
+  const db = await openDB();
   const encList: EncryptedRecord[] = await new Promise((res) => {
     db
       .transaction(STORE_NAME, 'readonly')
@@ -218,7 +218,7 @@ async function getStoredCredentialByCredentialId(
 export async function getEncryptedCredentialByUniqueId(
   uniqueId: string,
 ): Promise<EncryptedRecord | null> {
-  const db = await openDatabase();
+  const db = await openDB();
   return new Promise((res) => {
     db
       .transaction(STORE_NAME, 'readonly')
@@ -230,7 +230,7 @@ export async function getEncryptedCredentialByUniqueId(
 
 // Save encrypted credential directly to DB
 export async function saveEncryptedCredential(record: EncryptedRecord): Promise<void> {
-  const db = await openDatabase();
+  const db = await openDB();
   await new Promise<void>((res) => {
     db
       .transaction(STORE_NAME, 'readwrite')
