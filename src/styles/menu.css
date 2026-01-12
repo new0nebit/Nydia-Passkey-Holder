@@ -5,7 +5,7 @@
 /* Logo and header */
 .logo-container {
   margin-top: 1px;
-  margin-bottom: 22px;
+  margin-bottom: 4px;
   padding-left: 1px;
   color: #000000;
 }
@@ -16,6 +16,23 @@ h2 {
   text-align: center;
   margin-bottom: 12px;
   color: #000;
+}
+
+/* Header with scroll shadow effect */
+.header-container {
+  transition: box-shadow 0.3s ease, background-color 0.3s ease;
+  margin-left: -12px;
+  margin-right: -12px;
+  margin-top: -12px;
+  padding: 12px 12px 8px 12px;
+  position: relative;
+  z-index: 10;
+}
+
+.header-container.scrolled {
+  background-color: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(8px);
 }
 
 /* Passkey list container */
@@ -129,7 +146,7 @@ h2 {
 /* ================================= */
 /* Header / Burger menu */
 /* ================================= */
-.header-container {
+.header-container-inner {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -143,7 +160,7 @@ h2 {
   display: flex;
   justify-content: flex-end;
   margin-top: 1px;
-  margin-bottom: 22px;
+  margin-bottom: 4px;
 }
 
 .burger-button {
@@ -359,6 +376,11 @@ h2 {
 
   h2 {
     color: #ffffff;
+  }
+
+  .header-container.scrolled {
+    background-color: rgba(46, 46, 46, 0.95);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 
   .passkey-item {
