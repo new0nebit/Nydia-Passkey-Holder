@@ -19,7 +19,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["popup.js", "dispatcher.js", "core.js"],
+      "js": ["popup.js", "dispatcher.js"],
       "css": ["popup.css"],
       "run_at": "document_start",
       "all_frames": true

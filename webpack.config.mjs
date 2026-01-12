@@ -15,7 +15,6 @@ export default (env, argv) => {
 
   return {
     entry: {
-      core: './src/core.ts',
       injector: './src/injector.ts',
       background: './src/background.ts',
       dispatcher: './src/dispatcher.ts',
