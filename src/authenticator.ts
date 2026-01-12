@@ -41,7 +41,7 @@ function logAuth(message: string, data?: unknown): void {
   }
 }
 
-// Hash data using SHA-256 algorithm.
+// SHA-256 helper
 async function sha256(data: ArrayBuffer | Uint8Array): Promise<ArrayBuffer> {
   return await subtle.digest('SHA-256', toArrayBuffer(data));
 }
@@ -113,7 +113,7 @@ function rawToDer(rawSignature: ArrayBuffer): ArrayBuffer {
   return derSignature.buffer;
 }
 
-// Chooses a signing algorithm.
+// Chooses a signing algorithm
 function chooseAlgorithm(
   params: PublicKeyCredentialCreationOptions['pubKeyCredParams'],
 ): SigningAlgorithm {
@@ -135,14 +135,14 @@ function chooseAlgorithm(
   throw new Error('No supported algorithm found');
 }
 
-// Convert buffer to hexadecimal string.
+// Convert buffer to hexadecimal string
 function bufferToHex(buffer: Uint8Array): string {
   return Array.from(buffer)
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }
 
-// Create a new credential.
+// Create a new credential
 export async function createCredential(
   options: CredentialCreationOptions,
 ): Promise<AttestationResponse | null> {
@@ -162,9 +162,9 @@ export async function createCredential(
     } else if (options.publicKey.user.id instanceof ArrayBuffer) {
       userId = toArrayBuffer(options.publicKey.user.id);
       logAuth('userId is ArrayBuffer');
-    } else if (ArrayBuffer.isView(options.publicKey.user.id)) {
+    } else if (options.publicKey.user.id instanceof Uint8Array) {
       userId = toArrayBuffer(options.publicKey.user.id);
-      logAuth('userId is ArrayBufferView');
+      logAuth('userId is Uint8Array');
     } else {
       logAuth(`Invalid user.id type: ${typeof options.publicKey.user.id}`);
       throw new Error('Invalid user.id type');
@@ -209,14 +209,13 @@ export async function createCredential(
     const credentialIdEncoded = base64UrlEncode(credentialId);
     logAuth('Credential ID generated:', credentialIdEncoded);
 
-    // Determine public key algorithm identifier
+    // Determine COSE algorithm identifier.
     let publicKeyAlgorithm: number;
     if (algorithm instanceof ES256) {
       publicKeyAlgorithm = -7;
     } else if (algorithm instanceof RS256) {
       publicKeyAlgorithm = -257;
     } else {
-      // Ed25519
       publicKeyAlgorithm = -8;
     }
     logAuth('Public key algorithm:', publicKeyAlgorithm);
@@ -438,7 +437,7 @@ export async function handleGetAssertion(
 
   logAuth('Constructed signatureBase (hex):', bufferToHex(signatureBase));
 
-  // Generate signature
+  // Generate signature based on algorithm
   let signature: ArrayBuffer;
 
   if (algorithm instanceof ES256) {
@@ -454,7 +453,6 @@ export async function handleGetAssertion(
     signature = rawToDer(rawSignature);
     logAuth('Converted signature to DER format');
 
-    // Log signature details
     const signatureBytes = new Uint8Array(signature);
     logAuth('Signature length after DER conversion:', signatureBytes.length);
     logAuth('Signature (DER hex):', bufferToHex(signatureBytes));
@@ -469,18 +467,13 @@ export async function handleGetAssertion(
       logAuth('Signature does not appear to be DER-encoded');
     }
   } else if (algorithm instanceof RS256) {
-    // Generate signature
     signature = await subtle.sign({ name: 'RSASSA-PKCS1-v1_5' }, secretKey, signatureBase);
     logAuth('Generated signature using RS256');
 
-    // Log signature details
     const signatureBytes = new Uint8Array(signature);
     logAuth('Signature length:', signatureBytes.length);
     logAuth('Signature (hex):', bufferToHex(signatureBytes));
   } else {
-    // Ed25519 (or EdDSA)
-    // Some browsers may not support Ed25519 in subtle.sign.
-    // If supported, it would look like:
     signature = await subtle.sign({ name: 'Ed25519' }, secretKey, signatureBase);
     logAuth('Generated signature using Ed25519');
 
