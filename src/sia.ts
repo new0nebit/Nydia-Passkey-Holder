@@ -1,4 +1,4 @@
-import { logInfo, logError } from './logger';
+import { logError, logInfo } from './logger';
 import { getSettings } from './store';
 import { EncryptedRecord, RenterdSettings } from './types';
 
@@ -80,13 +80,13 @@ export async function getPasskeysFromRenterd(
     method: 'GET',
     headers: buildHeaders(settings),
   });
-  const jsonData = await response.json();
+  const jsonData = (await response.json()) as { objects?: Array<{ key: string }> };
   logInfo('Parsed objects list', jsonData);
 
-  const objects = jsonData.objects || [];
+  const objects = jsonData.objects ?? [];
   const passkeyFiles = objects
-    .map((object: any) => (object.key as string).replace(/^\//, ''))
-    .filter((key: string) => key.endsWith(PASSKEY_EXTENSION));
+    .map((object) => object.key.replace(/^\//, ''))
+    .filter((key) => key.endsWith(PASSKEY_EXTENSION));
 
   logInfo('Found passkey files', { count: passkeyFiles.length, files: passkeyFiles });
   return passkeyFiles;
@@ -159,11 +159,12 @@ export async function uploadPasskeyDirect(
       success: true,
       message: 'Passkey successfully backed up to Sia.',
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     logError('Error uploading encrypted passkey to renterd', error);
+    const message = error instanceof Error ? error.message : String(error);
     return {
       success: false,
-      error: `Failed to backup passkey: ${error.message}`,
+      error: `Failed to backup passkey: ${message}`,
     };
   }
 }
