@@ -360,7 +360,7 @@ export class OnboardingController {
   private svgCheck(): HTMLElement {
     const wrap = div('success-icon');
     wrap.innerHTML =
-      '<svg class="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+      '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
       '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>';
     return wrap;
   }
