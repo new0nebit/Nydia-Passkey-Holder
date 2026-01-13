@@ -27,7 +27,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["injector.js"],
+      "resources": ["injector.js", "icon.png"],
       "matches": ["https://*/*", "http://*/*"]
     }
   ],
