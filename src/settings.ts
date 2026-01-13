@@ -1,4 +1,5 @@
-import { icons } from './icons';
+import { icons } from './ui/icons/menu';
+
 import { getSettings as storeGetSettings, saveSettings as storeSaveSettings } from './store';
 import { RenterdSettings } from './types';
 

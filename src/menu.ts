@@ -1,6 +1,6 @@
 import browser from 'browser-api';
 
-import { icons } from './icons';
+import { icons } from './ui/icons/menu';
 import { logError } from './logger';
 import {
   getSettings,
@@ -405,7 +405,7 @@ export class Menu {
   }
 
   private passkeyItem(passkey: StoredCredential): HTMLLIElement {
-    const li = create('li', ['passkey-item']);
+    const listItem = create('li', ['passkey-item']);
 
     const site = create('div', ['site-info']);
     const icon = createSiteIcon(passkey.rpId);
@@ -430,8 +430,8 @@ export class Menu {
     );
     actions.append(backup, del);
 
-    li.append(site, user, actions);
-    return li;
+    listItem.append(site, user, actions);
+    return listItem;
   }
 
   private async remove(uniqueId: string): Promise<void> {
