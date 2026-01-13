@@ -1,4 +1,4 @@
-import './styles/popup.css';
+import './ui/styles/popup.css';
 import { user, www } from './icons';
 import { logError, logInfo } from './logger';
 import { Account, WebAuthnOperationType } from './types';
