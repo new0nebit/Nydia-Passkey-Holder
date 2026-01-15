@@ -1,4 +1,4 @@
-import { logError, logInfo } from './logger';
+import { logDebug, logError } from './logger';
 import { getSettings } from './store';
 import { EncryptedRecord, RenterdSettings } from './types';
 
@@ -7,13 +7,19 @@ const MIME_OCTET_STREAM = 'application/octet-stream';
 const QUERY_BUCKET = 'bucket';
 const QUERY_MIMETYPE = 'mimetype';
 
+// Build base URL using saved protocol (detected during settings save).
+function buildBaseURL(settings: RenterdSettings): string {
+  const protocol = settings.serverProtocol ?? 'http';
+  return `${protocol}://${settings.serverAddress}:${settings.serverPort}`;
+}
+
 // Base URL builders.
 function buildWorkerBaseURL(settings: RenterdSettings): string {
-  return `http://${settings.serverAddress}:${settings.serverPort}/api/worker/object`;
+  return `${buildBaseURL(settings)}/api/worker/object`;
 }
 
 function buildBusBaseURL(settings: RenterdSettings): string {
-  return `http://${settings.serverAddress}:${settings.serverPort}/api/bus`;
+  return `${buildBaseURL(settings)}/api/bus`;
 }
 
 // Build a URL to list objects in the renterd bucket.
@@ -58,9 +64,9 @@ async function httpRequest(
   url: string,
   options: RequestInit,
 ): Promise<Response> {
-  logInfo('[Sia] Sending request', { url, options });
+  logDebug('[Sia] Sending request', { url, options });
   const response = await fetch(url, options);
-  logInfo('[Sia] Response status', { status: response.status });
+  logDebug('[Sia] Response status', { status: response.status });
 
   if (!response.ok) {
     const errorText = `HTTP error! Status: ${response.status} ${response.statusText}`;
@@ -74,21 +80,21 @@ async function httpRequest(
 export async function getPasskeysFromRenterd(
   settings: RenterdSettings,
 ): Promise<string[]> {
-  logInfo('[Sia] Starting getPasskeysFromRenterd', { settings });
+  logDebug('[Sia] Starting getPasskeysFromRenterd', { settings });
 
   const response = await httpRequest(buildListURL(settings), {
     method: 'GET',
     headers: buildHeaders(settings),
   });
   const jsonData = (await response.json()) as { objects?: Array<{ key: string }> };
-  logInfo('[Sia] Parsed objects list', jsonData);
+  logDebug('[Sia] Parsed objects list', jsonData);
 
   const objects = jsonData.objects ?? [];
   const passkeyFiles = objects
     .map((object) => object.key.replace(/^\//, ''))
     .filter((key) => key.endsWith(PASSKEY_EXTENSION));
 
-  logInfo('[Sia] Found passkey files', { count: passkeyFiles.length, files: passkeyFiles });
+  logDebug('[Sia] Found passkey files', { count: passkeyFiles.length, files: passkeyFiles });
   return passkeyFiles;
 }
 
@@ -99,14 +105,14 @@ async function uploadPasskeyToRenterd(
   settings: RenterdSettings,
 ): Promise<void> {
   const fileName = `${uniqueId}${PASSKEY_EXTENSION}`;
-  logInfo('[Sia] Starting uploadPasskeyToRenterd', { fileName, settings });
+  logDebug('[Sia] Starting uploadPasskeyToRenterd', { fileName, settings });
 
   await httpRequest(buildUploadURL(settings, fileName), {
     method: 'PUT',
     headers: buildHeaders(settings, MIME_OCTET_STREAM),
     body: passkeyData,
   });
-  logInfo('[Sia] Binary passkey blob stored on renterd', { fileName });
+  logDebug('[Sia] Binary passkey blob stored on renterd', { fileName });
 }
 
 // Download a passkey from renterd and return it as EncryptedRecord.
@@ -114,14 +120,14 @@ export async function downloadPasskeyFromRenterd(
   fileName: string,
   settings: RenterdSettings,
 ): Promise<EncryptedRecord> {
-  logInfo('[Sia] Starting downloadPasskeyFromRenterd', { fileName, settings });
+  logDebug('[Sia] Starting downloadPasskeyFromRenterd', { fileName, settings });
 
   const response = await httpRequest(buildObjectURL(settings, fileName), {
     method: 'GET',
     headers: buildHeaders(settings),
   });
   const data = await response.json();
-  logInfo('[Sia] Downloaded encrypted passkey data', { uniqueId: data.uniqueId });
+  logDebug('[Sia] Downloaded encrypted passkey data', { uniqueId: data.uniqueId });
 
   // Validate that it's a proper EncryptedRecord.
   if (!data.uniqueId || !data.iv || !data.data) {
@@ -152,7 +158,7 @@ export async function uploadPasskeyDirect(
 
   try {
     await uploadPasskeyToRenterd(passkeyData, record.uniqueId, settings);
-    logInfo('[Sia] Encrypted record prepared and uploaded via renterd worker API', {
+    logDebug('[Sia] Encrypted record prepared and uploaded via renterd worker API', {
       uniqueId: record.uniqueId,
     });
     return {
