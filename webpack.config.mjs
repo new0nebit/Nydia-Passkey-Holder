@@ -26,7 +26,7 @@ export default (env, argv) => {
           './src/ui/styles/main.css'
         ],
       },
-      popup: './src/popup.ts'
+      popup: './src/popup/popup.ts'
     },
     module: {
       rules: [

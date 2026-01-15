@@ -15,14 +15,13 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["popup.js", "dispatcher.js"],
-      "css": ["popup.css"],
+      "js": ["dispatcher.js"],
       "run_at": "document_start",
       "all_frames": true
     }
   ],
   "web_accessible_resources": [
-    "injector.js", "icon.png"
+    "injector.js", "icon.png", "popup.html", "popup.js", "popup.css"
   ],
   "browser_action": {
     "default_popup": "menu.html",
