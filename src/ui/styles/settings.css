@@ -38,14 +38,6 @@
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
 }
 
-.button-indigo {
-  background-color: rgb(79, 70, 229);
-}
-
-.button-indigo:hover {
-  background-color: rgb(67, 56, 202);
-}
-
 .button-blue {
   background-color: rgb(59, 130, 246);
 }
