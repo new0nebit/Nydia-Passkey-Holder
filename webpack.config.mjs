@@ -36,7 +36,7 @@ export default (env, argv) => {
             {
               loader: 'ts-loader',
               options: {
-                transpileOnly: true,
+                transpileOnly: false,
                 compilerOptions: {
                   module: 'esnext',
                 },
