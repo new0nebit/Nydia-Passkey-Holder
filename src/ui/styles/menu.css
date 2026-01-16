@@ -74,6 +74,28 @@ h2 {
   width: 20px;
   height: 20px;
   margin-right: 8px;
+  position: relative;
+  flex-shrink: 0;
+  color: #9CA3AF;
+}
+
+.site-icon svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+.site-icon--has-favicon svg {
+  display: none;
+}
+
+.site-icon-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 .site-info span {
@@ -87,6 +109,13 @@ h2 {
   align-items: center;
   margin-bottom: 8px;
   color: rgb(75, 85, 99);
+}
+
+.user-info svg {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+  flex-shrink: 0;
 }
 
 .user-info span {
@@ -152,7 +181,6 @@ h2 {
   align-items: center;
   padding: 0;
   width: 100%;
-  box-sizing: border-box;
 }
 
 .menu-container {

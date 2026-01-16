@@ -2,6 +2,7 @@ import alert from './alert.svg';
 import burger from './burger.svg';
 import check from './check.svg';
 import deleteIcon from './delete.svg';
+import globe from './globe.svg';
 import info from './info.svg';
 import logo from './logo.svg';
 import question from './question.svg';
@@ -15,6 +16,7 @@ export const icons = {
   burger,
   check,
   delete: deleteIcon,
+  globe,
   info,
   logo,
   question,

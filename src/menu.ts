@@ -178,13 +178,51 @@ function resetSyncButton(button: HTMLButtonElement): void {
 }
 
 // Website icon creation
-function createSiteIcon(rpId: string): HTMLImageElement {
-  const icon = create('img', ['site-icon']);
+function createSiteIcon(rpId: string): HTMLElement {
+  const icon = create('div', ['site-icon']);
+  icon.setAttribute('aria-hidden', 'true');
+
+  // Add inline SVG globe as fallback
+  const globeSvg = createSvgElement(icons.globe);
+  if (globeSvg) icon.appendChild(globeSvg);
 
   // Get the base domain and encode for URLs
   const baseDomain = getBaseDomain(rpId);
-  icon.src = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(baseDomain)}&sz=64`;
-  icon.alt = `${rpId} icon`;
+  const url = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(baseDomain)}&sz=64`;
+
+  void fetch(url)
+    .then((response) => (response.ok ? response.blob() : null))
+    .then((blob) => {
+      if (!blob || !icon.isConnected) return;
+
+      const objectUrl = URL.createObjectURL(blob);
+      const img = create('img', ['site-icon-img']);
+      img.alt = `${rpId} icon`;
+      img.decoding = 'async';
+      img.src = objectUrl;
+
+      img.addEventListener(
+        'load',
+        () => {
+          if (icon.isConnected) {
+            icon.appendChild(img);
+            icon.classList.add('site-icon--has-favicon');
+          }
+          URL.revokeObjectURL(objectUrl);
+        },
+        { once: true },
+      );
+
+      img.addEventListener(
+        'error',
+        () => {
+          URL.revokeObjectURL(objectUrl);
+        },
+        { once: true },
+      );
+    })
+    .catch(() => {});
+
   return icon;
 }
 
