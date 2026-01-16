@@ -1,6 +1,6 @@
 {
   "name": "Nydia-Passkey-Holder",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "Browser extension for decentralized passkey storage on the Sia network.",
   "author": "Oleh N.",
   "license": "MIT",
@@ -28,25 +28,27 @@
     "dev:chrome": "webpack --watch --mode development --env target=chrome",
     "dev:firefox": "webpack --watch --mode development --env target=firefox",
     "lint": "eslint 'src/**/*.{js,ts}'",
+    "type-check": "tsc --noEmit",
+    "check": "npm-run-all --continue-on-error lint type-check",
     "analyze": "webpack --mode production --env analyze"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
-    "@types/chrome": "^0.1.32",
+    "@types/chrome": "^0.1.33",
     "@types/firefox-webext-browser": "^143.0.0",
     "copy-webpack-plugin": "^13.0.1",
     "css-loader": "^7.1.2",
     "css-minimizer-webpack-plugin": "^7.0.4",
     "eslint": "^9.39.2",
-    "globals": "^16.5.0",
-    "mini-css-extract-plugin": "^2.9.4",
+    "globals": "^17.0.0",
+    "mini-css-extract-plugin": "^2.10.0",
     "npm-run-all": "^4.1.5",
     "terser-webpack-plugin": "^5.3.16",
     "ts-loader": "^9.5.4",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.50.0",
+    "typescript-eslint": "^8.53.0",
     "webpack": "^5.104.1",
-    "webpack-bundle-analyzer": "^5.1.0",
+    "webpack-bundle-analyzer": "^5.1.1",
     "webpack-cli": "^6.0.1"
   }
 }
