@@ -146,11 +146,6 @@ body {
   flex-shrink: 0;
 }
 
-.icon.user {
-  width: 20px !important;
-  height: 20px !important;
-}
-
 .icon.sia {
   width: 16px !important;
   height: 16px !important;

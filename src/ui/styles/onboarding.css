@@ -32,12 +32,6 @@
 }
 
 /* ---------- Global helpers ---------- */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
 .onboarding-container,
 .seed-input,
 .seed-grid {
@@ -140,12 +134,6 @@
   background: transparent;
   border: 1px solid #fb923c;
   color: #fb923c;
-}
-
-@media (prefers-color-scheme: dark) {
-  .btn-restore {
-    color: #fb923c;
-  }
 }
 
 /* Navigation button */
