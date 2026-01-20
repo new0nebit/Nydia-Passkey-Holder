@@ -15,7 +15,6 @@ import {
   getEncryptedCredentialByUniqueId,
   getSettings,
   handleMessageInBackground,
-  isBackgroundContext,
   saveEncryptedCredential,
   getMasterKeyIfAvailable,
   setMasterKey,
@@ -350,8 +349,6 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
 
 // Bootstrap
 logInfo('[Background] bootstrap');
-logDebug('[Background] isBackgroundContext', isBackgroundContext());
-
 browser.runtime.onMessage.addListener((message: unknown) => {
   if (!isBackgroundMessage(message)) {
     logError('[Background] Invalid message format', message);

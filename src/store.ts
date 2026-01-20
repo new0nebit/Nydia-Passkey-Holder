@@ -1,5 +1,3 @@
-import browser from 'browser-api';
-
 import { Ed25519, ES256, RS256, SigningAlgorithm } from './algorithms';
 import { logDebug, logError } from './logger';
 import { uploadPasskeyDirect } from './sia';
@@ -19,34 +17,6 @@ const subtle = crypto.subtle;
 
 // Simple per-credential mutex to avoid race conditions during counter updates
 const counterLocks: Map<string, Promise<void>> = new Map();
-
-// Check background context
-export function isBackgroundContext(): boolean {
-  const globalObj = globalThis as {
-    ServiceWorkerGlobalScope?: new () => unknown;
-  };
-
-  const isServiceWorkerScope =
-    typeof globalObj.ServiceWorkerGlobalScope === 'function' &&
-    self instanceof globalObj.ServiceWorkerGlobalScope;
-
-  if (isServiceWorkerScope) return true;
-
-  if (typeof window !== 'undefined' && typeof browser !== 'undefined') {
-    const bgUrls = [browser.runtime.getURL('_generated_background_page.html')];
-    if (bgUrls.includes(window.location.href)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-async function sendMessageToExtension<T = unknown>(msg: BackgroundMessage): Promise<T> {
-  return isBackgroundContext()
-    ? ((handleMessageInBackground(msg) as unknown) as Promise<T>)
-    : (browser.runtime.sendMessage(msg) as Promise<T>);
-}
 
 type FindCredentialOptions = SerializedRequestOptions | GetAssertionOptions;
 
@@ -435,24 +405,24 @@ export async function handleMessageInBackground(message: BackgroundMessage): Pro
   }
 }
 
-// Foreground Proxies
+// Background proxy helpers
 export async function findCredential(
   options: SerializedRequestOptions | GetAssertionOptions,
   selectedCredentialId?: string,
 ): Promise<StoredCredential> {
-  const response = await sendMessageToExtension<StoredCredential | { error: string }>({
+  const response = await handleMessageInBackground({
     type: 'findCredential',
     options,
     selectedCredentialId,
-  });
+  }) as StoredCredential | { error: string };
   if ('error' in response) throw new Error(response.error);
   return response;
 }
 
 export async function getAllStoredCredentials(): Promise<StoredCredential[]> {
-  const response = await sendMessageToExtension<StoredCredential[] | { error: string }>({
+  const response = await handleMessageInBackground({
     type: 'getAllStoredCredentials',
-  });
+  }) as StoredCredential[] | { error: string };
   if (!Array.isArray(response)) {
     if ('error' in response) throw new Error(response.error);
     return [];
