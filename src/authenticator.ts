@@ -1,6 +1,6 @@
 import { Ed25519, ES256, RS256, SigningAlgorithm } from './algorithms';
 import { CBORValue, WebAuthnCBOR } from './cbor';
-import { logError, logInfo } from './logger';
+import { logDebug, logError, logInfo, logWarn } from './logger';
 import {
   createUniqueId,
   findCredential,
@@ -32,14 +32,6 @@ const AAGUID: Uint8Array = new Uint8Array([
   0x00, 0x00, 0x00, 0x4E,
   0x79, 0x64, 0x69, 0x61
 ]);
-
-function logAuth(message: string, data?: unknown): void {
-  if (data !== undefined) {
-    logInfo(`[Authenticator] ${message}`, data);
-  } else {
-    logInfo(`[Authenticator] ${message}`);
-  }
-}
 
 // SHA-256 helper
 async function sha256(data: ArrayBuffer | Uint8Array): Promise<ArrayBuffer> {
@@ -142,12 +134,21 @@ function bufferToHex(buffer: Uint8Array): string {
     .join('');
 }
 
+// Get algorithm name for logging
+type AlgorithmName = 'ES256' | 'RS256' | 'Ed25519';
+
+function getAlgorithmName(algorithm: SigningAlgorithm): AlgorithmName {
+  if (algorithm instanceof ES256) return 'ES256';
+  if (algorithm instanceof RS256) return 'RS256';
+  return 'Ed25519';
+}
+
 // Create a new credential
 export async function createCredential(
   options: CredentialCreationOptions,
 ): Promise<AttestationResponse | null> {
-  logAuth('Starting credential creation...');
-  logAuth('Options:', options);
+  logInfo('[Authenticator] Starting credential creation...');
+  logDebug('[Authenticator] Options', options);
 
   try {
     if (!options.publicKey) {
@@ -155,61 +156,56 @@ export async function createCredential(
     }
 
     // Process options.publicKey.user.id
-    let userId: ArrayBuffer;
-    if (typeof options.publicKey.user.id === 'string') {
-      userId = toArrayBuffer(options.publicKey.user.id);
-      logAuth('userId decoded from string');
-    } else if (options.publicKey.user.id instanceof ArrayBuffer) {
-      userId = toArrayBuffer(options.publicKey.user.id);
-      logAuth('userId is ArrayBuffer');
-    } else if (options.publicKey.user.id instanceof Uint8Array) {
-      userId = toArrayBuffer(options.publicKey.user.id);
-      logAuth('userId is Uint8Array');
+    const rawUserId = options.publicKey.user.id;
+
+    let userIdLog: string;
+    if (typeof rawUserId === 'string') {
+      userIdLog = 'userId decoded from string';
+    } else if (rawUserId instanceof ArrayBuffer) {
+      userIdLog = 'userId is ArrayBuffer';
+    } else if (rawUserId instanceof Uint8Array) {
+      userIdLog = 'userId is Uint8Array';
     } else {
-      logAuth(`Invalid user.id type: ${typeof options.publicKey.user.id}`);
-      throw new Error('Invalid user.id type');
+      throw new Error(`Invalid user.id type: ${Object.prototype.toString.call(rawUserId)}`);
     }
+
+    const userId = toArrayBuffer(rawUserId);
+    logDebug(`[Authenticator] ${userIdLog}`);
 
     // Determine rpId
     const rpId =
       options.publicKey.rpId || options.publicKey.rp.id || new URL(options.origin).hostname;
-    logAuth('rpId:', rpId);
+    logDebug('[Authenticator] rpId', rpId);
 
     // Choose a signing algorithm
     const algorithm = chooseAlgorithm(options.publicKey.pubKeyCredParams);
-    logAuth(
-      'Chosen algorithm:',
-      algorithm instanceof ES256 ? 'ES256' : algorithm instanceof RS256 ? 'RS256' : 'Ed25519',
-    );
+    logDebug('[Authenticator] Chosen algorithm', getAlgorithmName(algorithm));
 
     // Hash the user ID
     const userIdHashBuffer = new Uint8Array(await sha256(userId));
     const userIdHash = base64UrlEncode(userIdHashBuffer);
-    logAuth('userIdHash generated:', userIdHash);
+    logDebug('[Authenticator] userIdHash generated', userIdHash);
 
     // Check for existing credentials
     const storedCredentials = await getAllStoredCredentials();
     const existingCredential = storedCredentials.find((cred) => cred.userIdHash === userIdHash);
 
     if (existingCredential) {
-      logAuth(`Existing credential found for user ${options.publicKey.user.name} and RP ${rpId}`);
+      logWarn('[Authenticator] Existing credential found - aborting creation', { rpId });
       return null;
     }
 
     // Generate key pair
-    logAuth(
-      'Generating key pair for algorithm:',
-      algorithm instanceof ES256 ? 'ES256' : algorithm instanceof RS256 ? 'RS256' : 'Ed25519',
-    );
+    logDebug('[Authenticator] Generating key pair for algorithm', getAlgorithmName(algorithm));
     const keyPair = await algorithm.generateKeyPair();
-    logAuth('Key pair generated successfully');
+    logDebug('[Authenticator] Key pair generated successfully');
 
     // Generate credential ID
     const credentialId = generateRandomBytes(32);
     const credentialIdEncoded = base64UrlEncode(credentialId);
-    logAuth('Credential ID generated:', credentialIdEncoded);
+    logDebug('[Authenticator] Credential ID generated', credentialIdEncoded);
 
-    // Determine COSE algorithm identifier.
+    // Determine COSE algorithm identifier
     let publicKeyAlgorithm: number;
     if (algorithm instanceof ES256) {
       publicKeyAlgorithm = -7;
@@ -218,7 +214,7 @@ export async function createCredential(
     } else {
       publicKeyAlgorithm = -8;
     }
-    logAuth('Public key algorithm:', publicKeyAlgorithm);
+    logDebug('[Authenticator] Public key algorithm', publicKeyAlgorithm);
 
     // Create COSE public key
     let cosePublicKey: Uint8Array;
@@ -241,7 +237,7 @@ export async function createCredential(
 
     // Export public key in DER format
     const publicKeyDER = await subtle.exportKey('spki', keyPair.publicKey);
-    logAuth('Public key exported in DER format');
+    logDebug('[Authenticator] Public key exported in DER format');
     const publicKeyDERBase64 = base64UrlEncode(publicKeyDER);
 
     // Save the private key
@@ -255,11 +251,11 @@ export async function createCredential(
       userIdHash,
       options.publicKey.user.name, // Pass the username
     );
-    logAuth('Private key saved');
+    logDebug('[Authenticator] Private key saved');
 
     // Create a unique ID associated with the credential
     const uniqueId = await createUniqueId(rpId, credentialIdEncoded);
-    logAuth('UniqueId associated with credential created:', uniqueId);
+    logDebug('[Authenticator] UniqueId associated with credential created', uniqueId);
 
     // Create authenticator data
     const rpIdHash = new Uint8Array(await sha256(new TextEncoder().encode(rpId)));
@@ -301,7 +297,7 @@ export async function createCredential(
 
     authenticatorData.set(cosePublicKey, offset);
 
-    logAuth('Authenticator data created');
+    logDebug('[Authenticator] Authenticator data created');
 
     // Create clientDataJSON
     const clientDataJSON = createClientDataJSON(
@@ -309,7 +305,7 @@ export async function createCredential(
       base64UrlEncode(options.publicKey.challenge),
       options.origin,
     );
-    logAuth('Client data JSON created');
+    logDebug('[Authenticator] Client data JSON created');
 
     // Build attestationObject as a Map (not a plain object).
     // Our CBOR encoder sorts map keys by the bytewise lexicographic order of
@@ -322,7 +318,7 @@ export async function createCredential(
       ['authData', authenticatorData],
     ]);
     const attestationObject = WebAuthnCBOR.encode(attestationMap);
-    logAuth('Attestation object created');
+    logDebug('[Authenticator] Attestation object created');
 
     // Construct the response
     const createResponse: AttestationResponse = {
@@ -338,13 +334,13 @@ export async function createCredential(
       },
     };
 
-    logAuth('Credential created successfully');
-    logAuth('Credential:', createResponse);
+    logInfo('[Authenticator] Credential created successfully');
+    logDebug('[Authenticator] Credential', createResponse);
 
     return createResponse;
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logError(`Error in createCredential: ${errorMessage}`, error);
+    logError(`[Authenticator] Error in createCredential: ${errorMessage}`, error);
     throw error;
   }
 }
@@ -354,8 +350,8 @@ export async function handleGetAssertion(
   options: GetAssertionOptions,
   selectedCredentialId?: string,
 ): Promise<AssertionResponse> {
-  logAuth('Starting assertion handling...');
-  logAuth('Assertion options:', options);
+  logInfo('[Authenticator] Starting assertion handling...');
+  logDebug('[Authenticator] Assertion options', options);
 
   // Check for the presence of the challenge
   if (!options.publicKey || !options.publicKey.challenge) {
@@ -376,8 +372,8 @@ export async function handleGetAssertion(
     challengeString = base64UrlEncode(challengeBuffer);
   }
 
-  logAuth('Challenge buffer (hex):', bufferToHex(challengeBuffer));
-  logAuth('Challenge string:', challengeString);
+  logDebug('[Authenticator] Challenge buffer (hex)', bufferToHex(challengeBuffer));
+  logDebug('[Authenticator] Challenge string', challengeString);
 
   // Search for stored credentials
   const storedCredential = await findCredential(options, selectedCredentialId);
@@ -388,21 +384,20 @@ export async function handleGetAssertion(
 
   // Determine rpId
   const rpId = options.publicKey.rpId || new URL(options.origin).hostname;
-  logAuth('Using rpId:', rpId);
+  logDebug('[Authenticator] Using rpId', rpId);
 
   // Load private key and algorithm
   const [secretKey, algorithm, counter] = await loadPrivateKey(storedCredential.credentialId);
 
-  logAuth('Loaded private key and algorithm:', {
+  logDebug('[Authenticator] Loaded private key and algorithm', {
     secretKeyType: secretKey.type,
-    algorithmName:
-      algorithm instanceof ES256 ? 'ES256' : algorithm instanceof RS256 ? 'RS256' : 'Ed25519',
+    algorithmName: getAlgorithmName(algorithm),
     counter,
   });
 
   // Form authenticatorData
   const rpIdHash = new Uint8Array(await sha256(new TextEncoder().encode(rpId)));
-  logAuth('Computed rpIdHash (hex):', bufferToHex(rpIdHash));
+  logDebug('[Authenticator] Computed rpIdHash (hex)', bufferToHex(rpIdHash));
 
   const flags = new Uint8Array([0x05]); // UP=1 (User Present), UV=1 (User Verified)
   const signCount = new Uint8Array(4);
@@ -420,22 +415,25 @@ export async function handleGetAssertion(
 
   authenticatorData.set(signCount, offset);
 
-  logAuth('Constructed authenticatorData (hex):', bufferToHex(authenticatorData));
+  logDebug('[Authenticator] Constructed authenticatorData (hex)', bufferToHex(authenticatorData));
 
   // Create clientDataJSON
   const clientDataJSON = createClientDataJSON('webauthn.get', challengeString, options.origin);
-  logAuth('Constructed clientDataJSON:', JSON.parse(new TextDecoder().decode(clientDataJSON)));
+  logDebug(
+    '[Authenticator] Constructed clientDataJSON',
+    JSON.parse(new TextDecoder().decode(clientDataJSON)),
+  );
 
   // Calculate clientDataHash
   const clientDataHash = new Uint8Array(await sha256(clientDataJSON));
-  logAuth('Computed clientDataHash (hex):', bufferToHex(clientDataHash));
+  logDebug('[Authenticator] Computed clientDataHash (hex)', bufferToHex(clientDataHash));
 
   // Form signatureBase
   const signatureBase = new Uint8Array(authenticatorData.length + clientDataHash.length);
   signatureBase.set(authenticatorData, 0);
   signatureBase.set(clientDataHash, authenticatorData.length);
 
-  logAuth('Constructed signatureBase (hex):', bufferToHex(signatureBase));
+  logDebug('[Authenticator] Constructed signatureBase (hex)', bufferToHex(signatureBase));
 
   // Generate signature based on algorithm
   let signature: ArrayBuffer;
@@ -447,42 +445,42 @@ export async function handleGetAssertion(
       secretKey,
       signatureBase,
     );
-    logAuth('Generated signature using ES256 (raw format)');
+    logDebug('[Authenticator] Generated signature using ES256 (raw format)');
 
     // Convert raw signature to DER format
     signature = rawToDer(rawSignature);
-    logAuth('Converted signature to DER format');
+    logDebug('[Authenticator] Converted signature to DER format');
 
     const signatureBytes = new Uint8Array(signature);
-    logAuth('Signature length after DER conversion:', signatureBytes.length);
-    logAuth('Signature (DER hex):', bufferToHex(signatureBytes));
+    logDebug('[Authenticator] Signature length after DER conversion', signatureBytes.length);
+    logDebug('[Authenticator] Signature (DER hex)', bufferToHex(signatureBytes));
 
     // Check if signature is DER-encoded
     const firstByte = signatureBytes[0];
-    logAuth('First byte of ECDSA signature (hex):', firstByte.toString(16));
+    logDebug('[Authenticator] First byte of ECDSA signature (hex)', firstByte.toString(16));
 
     if (firstByte === 0x30) {
-      logAuth('Signature appears to be DER-encoded');
+      logDebug('[Authenticator] Signature appears to be DER-encoded');
     } else {
-      logAuth('Signature does not appear to be DER-encoded');
+      logDebug('[Authenticator] Signature does not appear to be DER-encoded');
     }
   } else if (algorithm instanceof RS256) {
     signature = await subtle.sign({ name: 'RSASSA-PKCS1-v1_5' }, secretKey, signatureBase);
-    logAuth('Generated signature using RS256');
+    logDebug('[Authenticator] Generated signature using RS256');
 
     const signatureBytes = new Uint8Array(signature);
-    logAuth('Signature length:', signatureBytes.length);
-    logAuth('Signature (hex):', bufferToHex(signatureBytes));
+    logDebug('[Authenticator] Signature length', signatureBytes.length);
+    logDebug('[Authenticator] Signature (hex)', bufferToHex(signatureBytes));
   } else {
     signature = await subtle.sign({ name: 'Ed25519' }, secretKey, signatureBase);
-    logAuth('Generated signature using Ed25519');
+    logDebug('[Authenticator] Generated signature using Ed25519');
 
     const signatureBytes = new Uint8Array(signature);
-    logAuth('Signature length:', signatureBytes.length);
-    logAuth('Signature (hex):', bufferToHex(signatureBytes));
+    logDebug('[Authenticator] Signature length', signatureBytes.length);
+    logDebug('[Authenticator] Signature (hex)', bufferToHex(signatureBytes));
   }
 
-  logAuth('Signature (base64url):', base64UrlEncode(signature));
+  logDebug('[Authenticator] Signature (base64url)', base64UrlEncode(signature));
 
   // Update credential counter
   await updateCredentialCounter(storedCredential.credentialId);
@@ -500,7 +498,7 @@ export async function handleGetAssertion(
     },
   };
 
-  logAuth('Constructed assertion response:', response);
+  logDebug('[Authenticator] Constructed assertion response', response);
 
   return response;
 }
