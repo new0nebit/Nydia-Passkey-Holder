@@ -13,9 +13,10 @@
     return view.buffer;
   };
 
-  // Convert ArrayBuffer to base64url-encoded string
-  const toBase64url = (buf: ArrayBuffer): string => {
-    const bytes = new Uint8Array(buf);
+  // Convert any BufferSource to base64url-encoded string
+  const toBase64url = (buf: BufferSource): string => {
+    const bytes = toUint8Array(buf);
+
     let bin = '';
     for (let i = 0; i < bytes.length; ++i) bin += String.fromCharCode(bytes[i]);
     return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -28,34 +29,47 @@
     return rest as Omit<T, 'signal'>;
   };
 
+  // Normalize any BufferSource to Uint8Array
+  const toUint8Array = (source: BufferSource): Uint8Array => {
+    if (source instanceof ArrayBuffer) {
+      return new Uint8Array(source);
+    }
+    // ArrayBufferView: TypedArray or DataView
+    return new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
+  };
+
   type PublicKeyOptions = {
     publicKey?: {
-      challenge?: ArrayBuffer | string;
-      user?: { id?: ArrayBuffer | string; [key: string]: unknown };
-      allowCredentials?: Array<{ id: ArrayBuffer | string; [key: string]: unknown }>;
-      excludeCredentials?: Array<{ id: ArrayBuffer | string; [key: string]: unknown }>;
+      challenge?: BufferSource | string;
+      user?: { id?: BufferSource | string; [key: string]: unknown };
+      allowCredentials?: Array<{ id: BufferSource | string; [key: string]: unknown }>;
+      excludeCredentials?: Array<{ id: BufferSource | string; [key: string]: unknown }>;
       [key: string]: unknown;
     };
     origin?: string;
     [key: string]: unknown;
   };
 
-  // Serialize ArrayBuffer values inside publicKey options into base64url strings
+  // Check if value is BufferSource (ArrayBuffer or ArrayBufferView)
+  const isBufferSource = (v: unknown): v is BufferSource =>
+    v instanceof ArrayBuffer || ArrayBuffer.isView(v);
+
+  // Serialize BufferSource values inside publicKey options into base64url strings
   const serializeOptions = (opts: PublicKeyOptions): PublicKeyOptions => {
     const out: PublicKeyOptions = { ...opts, origin: location.origin };
     if (!out.publicKey) return out;
 
     const pk = (out.publicKey = { ...out.publicKey });
 
-    if (pk.challenge instanceof ArrayBuffer) pk.challenge = toBase64url(pk.challenge);
+    if (isBufferSource(pk.challenge)) pk.challenge = toBase64url(pk.challenge);
 
-    if (pk.user?.id instanceof ArrayBuffer) {
+    if (pk.user?.id && isBufferSource(pk.user.id)) {
       pk.user = { ...pk.user, id: toBase64url(pk.user.id) };
     }
 
     // Handle arrays of credentials that need id conversion
     const rewrite = (
-      arr?: Array<{ id: ArrayBuffer | string; [key: string]: unknown }>,
+      arr?: Array<{ id: BufferSource | string; [key: string]: unknown }>,
     ): Array<{ id: string; [key: string]: unknown }> | undefined =>
       arr?.map((d) => ({
         ...d,
