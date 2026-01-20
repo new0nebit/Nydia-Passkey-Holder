@@ -9,7 +9,7 @@ import {
   showSettingsForm,
   validateSettings,
 } from './settings';
-import { getAllStoredCredentialsFromDB } from './store';
+import { getAllStoredCredentialsFromDB, openDB, STORE_NAME } from './store';
 import { StoredCredential } from './types';
 
 type NotificationType = 'success' | 'error' | 'info' | 'warning';
@@ -26,11 +26,6 @@ interface SyncDownloadResult {
   empty: boolean;
   error: boolean;
 }
-
-// IndexedDB
-const DB_NAME = 'NydiaDB';
-const DB_VERSION = 4;
-const STORE_NAME = 'storedCredentials';
 
 // Domain Sanitisation
 function sanitizeDomain(domain: string): string {
@@ -173,16 +168,6 @@ function modal(type: ModalType, title: string, message: string): Promise<boolean
     overlay.appendChild(content);
     document.body.appendChild(overlay);
   });
-}
-
-// Ensure index exists on upgrade
-function ensureIndex(
-  store: IDBObjectStore,
-  name: string,
-  keyPath: string,
-  options?: IDBIndexParameters,
-) {
-  if (!store.indexNames.contains(name)) store.createIndex(name, keyPath, options);
 }
 
 // Reset "Sync Passkeys" button to default look
@@ -389,7 +374,7 @@ export class Menu {
       return;
 
     try {
-      const db = await this.openDB();
+      const db = await openDB();
       const tx = db.transaction(STORE_NAME, 'readwrite');
       tx.objectStore(STORE_NAME).delete(uniqueId).onsuccess = () => {
         notify('success', 'Deleted', 'Passkey deleted successfully.');
@@ -518,33 +503,6 @@ export class Menu {
       logError('[Menu] downloadNew error', err);
       return { syncedCount: 0, failedCount: 0, empty: true, error: true };
     }
-  }
-
-  private openDB(): Promise<IDBDatabase> {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-      request.onupgradeneeded = () => {
-        const db = request.result;
-        let store: IDBObjectStore;
-
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          store = db.createObjectStore(STORE_NAME, { keyPath: 'uniqueId' });
-        } else {
-          const tx = request.transaction!;
-          store = tx.objectStore(STORE_NAME);
-        }
-
-        ensureIndex(store, 'credentialId', 'credentialId', { unique: true });
-        ensureIndex(store, 'rpId', 'rpId');
-        if (!db.objectStoreNames.contains('settings')) {
-          db.createObjectStore('settings', { keyPath: 'id' });
-        }
-      };
-
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
   }
 }
 

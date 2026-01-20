@@ -16,7 +16,9 @@ import {
   getSettings,
   handleMessageInBackground,
   isBackgroundContext,
+  openDB,
   saveEncryptedCredential,
+  SETTINGS_STORE,
 } from './store';
 import {
   BackgroundMessage,
@@ -29,28 +31,6 @@ import {
 } from './types';
 import { toArrayBuffer } from './utils/buffer';
 
-// IndexedDB
-const DB_NAME = 'NydiaDB';
-const DB_VER = 4;
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((res, rej) => {
-    const req = indexedDB.open(DB_NAME, DB_VER);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains('storedCredentials'))
-        db.createObjectStore('storedCredentials', { keyPath: 'uniqueId' }).createIndex(
-          'credentialId',
-          'credentialId',
-        );
-      if (!db.objectStoreNames.contains('settings'))
-        db.createObjectStore('settings', { keyPath: 'id' });
-    };
-    req.onsuccess = () => res(req.result);
-    req.onerror = () => rej(req.error);
-  });
-}
-
 // masterKey and RSA wrapping key pair
 let masterKey: CryptoKey | null = null;
 let wrappingKeyPair: CryptoKeyPair | null = null;
@@ -61,8 +41,8 @@ async function loadMasterKey(): Promise<CryptoKey | null> {
   const db = await openDB();
   const rec = await new Promise<{ key?: CryptoKey } | undefined>((r) => {
     const request = db
-      .transaction('settings', 'readonly')
-      .objectStore('settings')
+      .transaction(SETTINGS_STORE, 'readonly')
+      .objectStore(SETTINGS_STORE)
       .get('ephemeralKey');
 
     request.onsuccess = () => r(request.result);
@@ -79,8 +59,8 @@ async function persistKey(key: CryptoKey): Promise<void> {
   const db = await openDB();
   await new Promise<void>((r) => {
     db
-      .transaction('settings', 'readwrite')
-      .objectStore('settings')
+      .transaction(SETTINGS_STORE, 'readwrite')
+      .objectStore(SETTINGS_STORE)
       .put({ id: 'ephemeralKey', key }).onsuccess = () => r();
   });
   masterKey = key;
@@ -427,10 +407,10 @@ logInfo('[Background] bootstrap');
 logInfo('[Background] isBackgroundContext', isBackgroundContext());
 
 patchSelfSend(router);
-browser.runtime.onMessage.addListener((message: unknown) => {
+browser.runtime.onMessage.addListener(async (message: unknown) => {
   if (!isBackgroundMessage(message)) {
     logError('[Background] Invalid message format', message);
-    return Promise.resolve({ error: 'Invalid message format' });
+    return { error: 'Invalid message format' };
   }
   return router(message);
 });
