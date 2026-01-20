@@ -13,7 +13,6 @@ import {
   StoredCredential,
 } from './types';
 import { base64UrlDecode, base64UrlEncode } from './utils/base64url';
-import { toArrayBuffer } from './utils/buffer';
 
 // Web Crypto API
 const subtle = crypto.subtle;
@@ -68,9 +67,8 @@ function extractRpId(options: FindCredentialOptions): string | undefined {
 // Helper function to normalize credential ID to string
 function normalizeCredentialId(id: unknown): string | undefined {
   if (typeof id === 'string') return id;
-  if (id instanceof ArrayBuffer || ArrayBuffer.isView(id)) {
-    return base64UrlEncode(new Uint8Array(toArrayBuffer(id)));
-  }
+  if (id instanceof ArrayBuffer) return base64UrlEncode(new Uint8Array(id));
+  if (id instanceof Uint8Array) return base64UrlEncode(id);
   return undefined;
 }
 

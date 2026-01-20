@@ -1,8 +1,6 @@
-// Encodes an ArrayBuffer or TypedArray into a base64url string.
-export function base64UrlEncode(buffer: ArrayBuffer | ArrayBufferView): string {
-  const bytes = buffer instanceof ArrayBuffer
-    ? new Uint8Array(buffer)
-    : new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+// Encodes an ArrayBuffer or Uint8Array into a base64url string.
+export function base64UrlEncode(buffer: ArrayBuffer | Uint8Array): string {
+  const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer;
 
   let binary = '';
   for (let i = 0; i < bytes.length; i++) {
@@ -37,9 +35,4 @@ export function base64UrlDecode(base64url: string): Uint8Array {
   }
   
   return bytes;
-}
-
-// Converts a base64url string into an ArrayBuffer.
-export function base64UrlToArrayBuffer(base64url: string): ArrayBuffer {
-  return base64UrlDecode(base64url).slice().buffer;
 }

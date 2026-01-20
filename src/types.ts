@@ -1,6 +1,6 @@
 export type WebAuthnOperationType = 'create' | 'get';
 
-export type BinaryLike = ArrayBuffer | ArrayBufferView;
+export type BinaryLike = ArrayBuffer | Uint8Array;
 export type BinaryOrBase64 = BinaryLike | string;
 
 export interface SerializedCredentialDescriptor {
