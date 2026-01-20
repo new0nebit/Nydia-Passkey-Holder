@@ -1,4 +1,4 @@
-import { base64UrlDecode } from '../base64url';
+import { base64UrlDecode } from './base64url';
 
 // Create a fresh ArrayBuffer copy; strings are treated as base64url.
 export function toArrayBuffer(data: string | ArrayBuffer | ArrayBufferView): ArrayBuffer {
