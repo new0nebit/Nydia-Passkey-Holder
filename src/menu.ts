@@ -61,6 +61,13 @@ function createSvgElement(svgString: string): SVGElement | null {
   return svg ? (svg.cloneNode(true) as SVGElement) : null;
 }
 
+// Append SVG icon to element if svgString is provided
+function appendSvgTo(element: Element, svgString: string): void {
+  if (!svgString) return;
+  const svg = createSvgElement(svgString);
+  if (svg) element.appendChild(svg);
+}
+
 // Create element with optional class list and text content
 function create<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -80,16 +87,9 @@ function createButton(
   classes: string[],
   handler: (button: HTMLButtonElement) => void,
 ): HTMLButtonElement {
-  const button = create('button', classes) as HTMLButtonElement;
-
-  if (iconSvg) {
-    const svg = createSvgElement(iconSvg);
-    if (svg) button.appendChild(svg);
-  }
-
-  const span = create('span');
-  span.textContent = label;
-  button.appendChild(span);
+  const button = create('button', classes);
+  appendSvgTo(button, iconSvg);
+  button.appendChild(create('span', [], label));
 
   button.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -108,15 +108,8 @@ function setButtonLabel(button: HTMLButtonElement, label: string): void {
 // Update the content of the button
 function updateButtonContent(button: HTMLButtonElement, iconSvg: string, label: string): void {
   button.innerHTML = '';
-
-  if (iconSvg) {
-    const svg = createSvgElement(iconSvg);
-    if (svg) button.appendChild(svg);
-  }
-
-  const span = create('span');
-  span.textContent = label;
-  button.appendChild(span);
+  appendSvgTo(button, iconSvg);
+  button.appendChild(create('span', [], label));
 }
 
 function notify(type: NotificationType, title: string, message: string): void {
@@ -201,7 +194,7 @@ function resetSyncButton(button: HTMLButtonElement): void {
 
 // Website icon creation
 function createSiteIcon(rpId: string): HTMLImageElement {
-  const icon = create('img', ['site-icon']) as HTMLImageElement;
+  const icon = create('img', ['site-icon']);
 
   // Get the base domain and encode for URLs
   const baseDomain = getBaseDomain(rpId);
@@ -293,7 +286,7 @@ export class Menu {
 
   private burgerMenu(): HTMLElement {
     const wrap = create('div', ['menu-container']);
-    const burger = create('button', ['burger-button']) as HTMLButtonElement;
+    const burger = create('button', ['burger-button']);
     const burgerSvg = createSvgElement(icons.burger);
     if (burgerSvg) burger.appendChild(burgerSvg);
 
@@ -360,7 +353,7 @@ export class Menu {
   }
 
   private passkeyItem(passkey: StoredCredential): HTMLLIElement {
-    const li = create('li', ['passkey-item']) as HTMLLIElement;
+    const li = create('li', ['passkey-item']);
 
     const site = create('div', ['site-info']);
     const icon = createSiteIcon(passkey.rpId);
