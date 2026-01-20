@@ -1,12 +1,12 @@
 /**
- * Chrome browser API wrapper
- * Implements Promise-based API compatible with Firefox's browser API
+ * Chrome browser API wrapper.
+ * Implements Promise-based WebExtensions API.
  */
 
 const runtime = {
-  sendMessage: (message: any): Promise<any> => {
+  sendMessage: (message: unknown): Promise<unknown> => {
     return new Promise((resolve) => {
-      // Wrap Chrome callback API in Promise for Firefox compatibility
+      // Wrap Chrome's callback API with Promises
       chrome.runtime.sendMessage(message, (response) => {
         if (chrome.runtime.lastError) {
           console.error('Chrome runtime error:', chrome.runtime.lastError);
@@ -24,21 +24,29 @@ const runtime = {
   },
 
   onMessage: {
-    addListener: (listener: (message: any, sender: any, sendResponse: any) => void | Promise<any>): void => {
+    addListener: (
+      listener: (
+        message: unknown,
+        sender: chrome.runtime.MessageSender,
+        sendResponse: (response?: unknown) => void,
+      ) => void | Promise<unknown>,
+    ): void => {
       chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const result = listener(message, sender, sendResponse);
-        
-        if (result && typeof result.then === 'function') {
-          result.then((response) => {
-            sendResponse(response);
-          }).catch((error) => {
-            console.error('Error in message listener:', error);
-            sendResponse({ error: error instanceof Error ? error.message : 'Unknown error' });
-          });
-          
+
+        if (result && typeof (result as Promise<unknown>).then === 'function') {
+          (result as Promise<unknown>)
+            .then((response) => {
+              sendResponse(response);
+            })
+            .catch((error) => {
+              console.error('Error in message listener:', error);
+              sendResponse({ error: error instanceof Error ? error.message : 'Unknown error' });
+            });
+
           return true;
         }
-        
+
         return false;
       });
     }
@@ -50,6 +58,10 @@ const runtime = {
         if (chrome.runtime.lastError) {
           console.error('Error getting background page:', chrome.runtime.lastError);
           reject(chrome.runtime.lastError);
+          return;
+        }
+        if (!backgroundPage) {
+          reject(new Error('Background page not available'));
           return;
         }
         resolve(backgroundPage);
