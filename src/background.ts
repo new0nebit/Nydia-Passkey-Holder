@@ -68,33 +68,6 @@ function secureCleanup(data: Uint8Array | number[] | null): void {
   }
 }
 
-// Firefox self-send patch
-function patchSelfSend(local: (m: BackgroundMessage) => Promise<unknown>) {
-  const rt = browser.runtime;
-  if (!rt?.sendMessage) return;
-
-  const myId = rt.id;
-  const orig = rt.sendMessage.bind(rt);
-
-  rt.sendMessage = ((...args: unknown[]) => {
-    let extId: string | undefined;
-    let msg: BackgroundMessage;
-
-    if (args.length === 1) {
-      msg = args[0] as BackgroundMessage;
-    } else {
-      extId = args[0] as string | undefined;
-      msg = args[1] as BackgroundMessage;
-    }
-
-    return !extId || extId === myId
-      ? local(msg)
-      : orig(...(args as Parameters<typeof rt.sendMessage>));
-  }) as typeof rt.sendMessage;
-
-  logInfo('[Background] runtime.sendMessage patched');
-}
-
 function normalizeDescriptor(
   descriptors?: SerializedCredentialDescriptor[],
 ): PublicKeyCredentialDescriptor[] | undefined {
@@ -379,7 +352,6 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
 logInfo('[Background] bootstrap');
 logDebug('[Background] isBackgroundContext', isBackgroundContext());
 
-patchSelfSend(router);
 browser.runtime.onMessage.addListener((message: unknown) => {
   if (!isBackgroundMessage(message)) {
     logError('[Background] Invalid message format', message);
