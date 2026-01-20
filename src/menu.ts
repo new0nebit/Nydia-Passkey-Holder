@@ -189,11 +189,22 @@ function createSiteIcon(rpId: string): HTMLImageElement {
 }
 
 export class Menu {
+  private cleanup: (() => void)[] = [];
+  private isRendering = false;
+  private pendingRender = false;
+
   constructor() {
     setNotificationDisplayer({ showNotification: notify });
     setOnSettingsComplete(() => this.render());
 
-    document.addEventListener('DOMContentLoaded', () => void this.init());
+    document.addEventListener('DOMContentLoaded', async () => {
+      try {
+        await this.init();
+      } catch (err) {
+        logError('[Menu] init error', err);
+        notify('error', 'Error', 'Failed to initialize menu');
+      }
+    });
   }
 
   // Onboarding
@@ -213,6 +224,14 @@ export class Menu {
   }
 
   private async render(): Promise<void> {
+    // Prevent race conditions - if already rendering, queue a new render
+    if (this.isRendering) {
+      this.pendingRender = true;
+      return;
+    }
+
+    this.isRendering = true;
+
     try {
       const passkeyList = document.getElementById('passkey-list');
       if (!passkeyList) return;
@@ -255,18 +274,58 @@ export class Menu {
     } catch (err) {
       logError('[Menu] render error', err);
       notify('error', 'Error', 'Failed to load passkeys.');
+    } finally {
+      this.isRendering = false;
+
+      // If a render was requested while we were rendering, do it now
+      if (this.pendingRender) {
+        this.pendingRender = false;
+        void this.render();
+      }
     }
   }
 
   private buildHeader(listRoot: HTMLElement): void {
+    this.cleanup.forEach((fn) => fn());
+    this.cleanup = [];
+
     const header = create('div', ['header-container']);
+    const headerInner = create('div', ['header-container-inner']);
 
     const logoContainer = create('div', ['logo-container']);
     const logoSvg = createSvgElement(icons.logo);
     if (logoSvg) logoContainer.appendChild(logoSvg);
 
-    header.append(logoContainer, this.burgerMenu());
+    headerInner.append(logoContainer, this.burgerMenu());
+    header.appendChild(headerInner);
     listRoot.parentElement?.prepend(header);
+
+    // Add scroll shadow effect
+    this.setupScrollShadow(listRoot, header);
+  }
+
+  private setupScrollShadow(scrollContainer: HTMLElement, header: HTMLElement): void {
+    let ticking = false;
+
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const scrollTop = scrollContainer.scrollTop;
+
+          if (scrollTop > 5) {
+            header.classList.add('scrolled');
+          } else {
+            header.classList.remove('scrolled');
+          }
+
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+
+    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+    this.cleanup.push(() => scrollContainer.removeEventListener('scroll', handleScroll));
   }
 
   private burgerMenu(): HTMLElement {
@@ -286,16 +345,24 @@ export class Menu {
       e.stopPropagation();
       toggle();
     });
-    document.addEventListener('click', (e) => {
-      if (!wrap.contains(e.target as Node) && !menu.classList.contains('hidden')) toggle();
-    });
+
+    const handleOutsideClick = (e: Event) => {
+      if (!wrap.contains(e.target as Node) && !menu.classList.contains('hidden')) {
+        toggle();
+      }
+    };
+    document.addEventListener('click', handleOutsideClick);
+    this.cleanup.push(() => document.removeEventListener('click', handleOutsideClick));
 
     menu.append(
       createButton(icons.sia, 'Sync Passkeys', ['menu-item'], async (button) => {
         button.disabled = true;
-        await this.sync(button);
-        button.disabled = false;
-        toggle();
+        try {
+          await this.sync(button);
+        } finally {
+          button.disabled = false;
+          toggle();
+        }
       }),
       createButton(icons.settings, 'Renterd Settings', ['menu-item'], () => {
         showSettingsForm();
@@ -355,7 +422,7 @@ export class Menu {
     const backup = createButton(
       passkey.isSynced ? icons.check : icons.sia,
       passkey.isSynced ? 'Synced' : 'Backup to Sia',
-      ['button', passkey.isSynced ? 'button-sync' : 'button-green'],
+      ['button', passkey.isSynced ? 'button-sync' : 'button-green', 'upload-button'],
       (button) => this.backup(passkey, button),
     );
     const del = createButton(icons.delete, 'Delete', ['button', 'button-red'], () =>

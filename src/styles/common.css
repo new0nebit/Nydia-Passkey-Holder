@@ -16,17 +16,20 @@ body {
   background-repeat: repeat;
   background-size: 4px 4px;
   width: 380px;
+  min-height: 200px;
   max-height: 600px;
   margin: 0;
   padding: 12px;
-  overflow-y: auto;
+  overflow: hidden;
   color: #1a202c; /* Text color */
 }
 
 #root {
-  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 150px;
   max-height: 570px;
-  overflow-y: auto;
+  overflow: hidden;
   background-color: rgba(255, 255, 255, 1);
   border-radius: 0px;
   padding: 12px;
