@@ -1,10 +1,13 @@
 // NOTE: This CBOR implementation is tailored for WebAuthn.
 // It implements only the subset needed for authenticator operations and COSE keys (EC2, RSA, OKP).
 
-// Encode and decode CBOR data for WebAuthn operations.
+export type CBORKey = number | string;
+export type CBORValue = number | string | Uint8Array | Map<CBORKey, CBORValue>;
+
+// Encode CBOR data for WebAuthn operations.
 export class WebAuthnCBOR {
   // Convert JavaScript value to CBOR format and return as Uint8Array.
-  static encode(value: any): Uint8Array {
+  static encode(value: CBORValue): Uint8Array {
     const encoder = new CBORWriter();
     encoder.write(value);
     return encoder.getResult();
@@ -16,7 +19,7 @@ export class WebAuthnCBOR {
     y: Uint8Array,
     alg: number
   ): Uint8Array {
-    const coseKey = new Map<number, any>([
+    const coseKey = new Map<number, CBORValue>([
       [1, 2],    // kty: Key Type (EC2)
       [3, alg],  // alg: Algorithm identifier
       [-1, 1],   // crv: Curve identifier (P-256)
@@ -32,7 +35,7 @@ export class WebAuthnCBOR {
     e: Uint8Array,
     alg: number
   ): Uint8Array {
-    const coseKey = new Map<number, any>([
+    const coseKey = new Map<number, CBORValue>([
       [1, 3],    // kty: Key Type (RSA)
       [3, alg],  // alg: Algorithm identifier
       [-1, n],   // n: Modulus
@@ -51,7 +54,7 @@ export class WebAuthnCBOR {
     // 3 = alg (often -8 for Ed25519),
     // -1 = crv (6 for Ed25519),
     // -2 = x (the raw public key bytes).
-    const coseKey = new Map<number, any>([
+    const coseKey = new Map<number, CBORValue>([
       [1, 1],    // kty: OKP
       [3, alg],  // alg: -8 for Ed25519
       [-1, 6],   // crv = 6 (Ed25519)
@@ -83,7 +86,7 @@ class CBORWriter {
   }
 
   // Encode a single value to CBOR bytes (helper for deterministic key sorting).
-  private static encodeOne(value: any): Uint8Array {
+  private static encodeOne(value: CBORValue): Uint8Array {
     const writer = new CBORWriter(32);
     writer.write(value);
     return writer.getResult();
@@ -95,7 +98,7 @@ class CBORWriter {
   // (integers, strings, and simple values)." We only use integer and string
   // keys in WebAuthn structures (COSE_Key, attestationObject, attStmt), so
   // this ordering matches CTAP2 canonical CBOR for our purposes.
-  private static compareCborKeys(a: any, b: any): number {
+  private static compareCborKeys(a: CBORKey, b: CBORKey): number {
     const A = CBORWriter.encodeOne(a);
     const B = CBORWriter.encodeOne(b);
 
@@ -110,7 +113,7 @@ class CBORWriter {
   }
 
   // Encode a value into the CBOR writer based on its type.
-  write(value: any): void {
+  write(value: CBORValue): void {
     if (typeof value === 'number') {
       if (Number.isInteger(value)) {
         this.encodeInteger(value);
@@ -153,7 +156,7 @@ class CBORWriter {
 
   // Encode a Map as a CBOR map with deterministic key order compatible with
   // CTAP2 expectations for WebAuthn structures.
-  private encodeMap(map: Map<any, any>): void {
+  private encodeMap(map: Map<CBORKey, CBORValue>): void {
     // Collect entries and sort them by the bytewise lexicographic order of their
     // CBOR-encoded keys. For the string and integer keys used in WebAuthn
     // structures (attestationObject, attStmt, COSE_Key), this matches CTAP2’s

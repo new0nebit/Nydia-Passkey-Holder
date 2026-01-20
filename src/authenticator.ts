@@ -1,6 +1,6 @@
 import { Ed25519, ES256, RS256, SigningAlgorithm } from './algorithms';
 import { base64UrlDecode, base64UrlEncode } from './base64url';
-import { WebAuthnCBOR } from './cbor';
+import { CBORValue, WebAuthnCBOR } from './cbor';
 import { logError, logInfo } from './logger';
 import {
   createUniqueId,
@@ -11,6 +11,8 @@ import {
   updateCredentialCounter,
 } from './store';
 import { Account } from './types';
+
+type AttestationCborMap = CBORValue;
 
 // Web Crypto API
 const subtle = crypto.subtle;
@@ -113,7 +115,6 @@ function chooseAlgorithm(params: any[]): SigningAlgorithm {
     if (param.alg === -257) {
       return new RS256();
     }
-    // Added check for Ed25519:
     if (param.alg === -8) {
       return new Ed25519();
     }
@@ -304,7 +305,7 @@ export async function createCredential(options: any): Promise<any> {
     // their CBOR encodings (RFC 8949 §4.2.1), which matches CTAP2’s canonical
     // CBOR expectations for string keys. For "fmt", "attStmt", and "authData",
     // this yields the required key order "fmt" → "attStmt" → "authData".
-    const attestationMap = new Map<string, any>([
+    const attestationMap = new Map<string, AttestationCborMap>([
       ['fmt', 'none'],
       ['attStmt', new Map()],
       ['authData', authenticatorData],
