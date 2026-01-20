@@ -241,6 +241,15 @@
   align-items: center;
   justify-content: center;
   background: var(--bg-success);
+  color: #22c55e;
+}
+
+.success-icon svg {
+  width: 32px;
+  height: 32px;
+  stroke: currentColor;
+  fill: none;
+  display: block;
 }
 
 .error-message {
