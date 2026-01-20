@@ -1,184 +1,333 @@
+import browser from 'browser-api';
+
 import './ui/styles/popup.css';
-import { user, www } from './icons';
-import { logError, logInfo } from './logger';
+import { icons } from './ui/icons/popup';
+
+import { logDebug, logError } from './logger';
 import { Account, WebAuthnOperationType } from './types';
 
+type CreationOptions = CredentialCreationOptions & {
+  publicKey: PublicKeyCredentialCreationOptions;
+};
+
+type RequestOptions = CredentialRequestOptions & {
+  publicKey: PublicKeyCredentialRequestOptions;
+};
+
+type CleanedOptions = CreationOptions | RequestOptions;
+
+function isCreationOptions(options: CleanedOptions): options is CreationOptions {
+  return 'user' in options.publicKey;
+}
+
 // Extract rpId from options
-function getRpIdFromOptions(options: any, type: WebAuthnOperationType): string {
-  if (type === 'create') {
+function getRpIdFromOptions(options: CleanedOptions, type: WebAuthnOperationType): string {
+  if (type === 'create' && isCreationOptions(options)) {
     return options.publicKey.rp?.id || window.location.hostname;
-  } else {
-    return options.publicKey.rpId || window.location.hostname;
   }
+  if (type === 'get') {
+    return (options as RequestOptions).publicKey.rpId || window.location.hostname;
+  }
+  return window.location.hostname;
+}
+
+// Create SVG element from string
+function createSvgElement(svgString: string): SVGElement | null {
+  const template = document.createElement('template');
+  template.innerHTML = svgString.trim();
+  const svg = template.content.querySelector('svg');
+  return svg ? (svg.cloneNode(true) as SVGElement) : null;
+}
+
+// Create element helper
+function createElement<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className?: string,
+  textContent?: string,
+): HTMLElementTagNameMap[K] {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (textContent !== undefined) element.textContent = textContent;
+  return element;
 }
 
 // Main popup function
 export async function showPopup(
-  options: any,
+  options: CleanedOptions,
   operationType: WebAuthnOperationType,
-  onAction: (options: any, selectedCredentialId?: string) => Promise<any>,
+  onAction: (options: CleanedOptions, selectedCredentialId?: string) => Promise<unknown>,
   accounts?: Account[],
-): Promise<any> {
+): Promise<unknown> {
   return new Promise((resolve) => {
-    logInfo('Creating and displaying the popup');
-    const popup = document.createElement('div');
-    popup.id = 'webauthn-popup';
+    logDebug('[Popup] Creating and displaying modern popup');
 
     const rpId = getRpIdFromOptions(options, operationType);
+    const isCreateMode = operationType === 'create';
+    const userName =
+      isCreateMode && isCreationOptions(options) && options.publicKey.user
+        ? options.publicKey.user.name
+        : '';
 
-    const title = document.createElement('h3');
-    title.innerHTML =
-      operationType === 'create'
-        ? '<span class="app-name">Nydia</span> | Passkey Registration'
-        : '<span class="app-name">Nydia</span> | Passkey Authentication';
-    popup.appendChild(title);
+    // Create overlay backdrop
+    const overlay = createElement('div', 'nydia-popup-overlay');
 
-    // Site information section
-    const siteInfo = document.createElement('div');
-    siteInfo.className = 'info-container';
+    // Create popup container
+    const popup = createElement('div', 'nydia-popup-container');
 
-    const rpIconWrapper = document.createElement('div');
-    rpIconWrapper.innerHTML = www;
-    const rpIcon = rpIconWrapper.firstElementChild;
-    if (rpIcon) {
-      rpIcon.classList.add('icon', 'rp-icon');
-    }
+    // === Header ===
+    const header = createElement('div', 'nydia-popup-header');
 
-    const websiteInfo = document.createElement('span');
-    websiteInfo.textContent = rpId;
+    const headerLeft = createElement('div', 'nydia-popup-header-left');
 
-    siteInfo.appendChild(rpIcon);
-    siteInfo.appendChild(websiteInfo);
-    popup.appendChild(siteInfo);
+    const logoBox = createElement('div', 'nydia-popup-logo');
+    const logoImg = createElement('img') as HTMLImageElement;
+    logoImg.src = browser.runtime.getURL('icon.png');
+    logoImg.alt = 'Nydia logo';
+    logoBox.appendChild(logoImg);
 
-    if (operationType === 'create' && options.publicKey.user) {
-      // User info section
-      const userInfoBlock = document.createElement('div');
-      userInfoBlock.className = 'info-container';
+    const headerText = createElement('div', 'nydia-popup-header-text');
+    const headerTitle = createElement('div', 'nydia-popup-header-title');
+    headerTitle.innerHTML = '<span class="nydia-gradient-text">Nydia</span> Passkey Holder';
 
-      // Add user icon
-      const userWrapper = document.createElement('div');
-      userWrapper.innerHTML = user;
-      const userIcon = userWrapper.firstElementChild;
-      if (userIcon) {
-        userIcon.classList.add('icon', 'user-icon');
-        userInfoBlock.appendChild(userIcon);
-      }
+    const headerSubtitle = createElement('div', 'nydia-popup-header-subtitle',
+      isCreateMode ? 'Registration' : 'Authentication'
+    );
 
-      const userInfo = document.createElement('span');
-      userInfo.textContent = options.publicKey.user.name;
-      userInfoBlock.appendChild(userInfo);
-      popup.appendChild(userInfoBlock);
-    }
+    headerText.appendChild(headerTitle);
+    headerText.appendChild(headerSubtitle);
+    headerLeft.appendChild(logoBox);
+    headerLeft.appendChild(headerText);
+    header.appendChild(headerLeft);
 
-    const buttonContainer = document.createElement('div');
-    buttonContainer.className = 'button-container';
+    // === Domain Info ===
+    const domainInfo = createElement('div', 'nydia-popup-domain-info');
 
-    if (operationType === 'get' && accounts && accounts.length > 0) {
-      // Sort accounts by creationTime so that the newest is at the top
+    const domainIconBox = createElement('div', 'nydia-popup-domain-icon');
+    const globeSvg = createSvgElement(icons.globe);
+    if (globeSvg) domainIconBox.appendChild(globeSvg);
+
+    const domainText = createElement('div', 'nydia-popup-domain-text');
+    const domainName = createElement('div', 'nydia-popup-domain-name', rpId);
+    const domainDesc = createElement('div', 'nydia-popup-domain-desc',
+      `Requesting passkey ${isCreateMode ? 'creation' : 'use'}`
+    );
+
+    domainText.appendChild(domainName);
+    domainText.appendChild(domainDesc);
+    domainInfo.appendChild(domainIconBox);
+    domainInfo.appendChild(domainText);
+
+    // === Content ===
+    const content = createElement('div', 'nydia-popup-content');
+
+    if (isCreateMode) {
+      // User info block for create mode
+      const userBlock = createElement('div', 'nydia-popup-user-block');
+
+      const userHeader = createElement('div', 'nydia-popup-user-header');
+      const userIconBox = createElement('div', 'nydia-popup-user-icon');
+      const userSvg = createSvgElement(icons.user);
+      if (userSvg) userIconBox.appendChild(userSvg);
+
+      const userTextBox = createElement('div', 'nydia-popup-user-text');
+      const userNameEl = createElement('div', 'nydia-popup-user-name', userName);
+
+      userTextBox.appendChild(userNameEl);
+      userHeader.appendChild(userIconBox);
+      userHeader.appendChild(userTextBox);
+
+      userBlock.appendChild(userHeader);
+      content.appendChild(userBlock);
+    } else if (accounts && accounts.length > 0) {
+      // Account selection for get mode
       accounts.sort((a, b) => {
         const aTime = a.creationTime ?? 0;
         const bTime = b.creationTime ?? 0;
         return bTime - aTime;
       });
 
-      const accountList = document.createElement('ul');
-      accountList.id = 'account-list';
+      const accountsHeader = createElement('div', 'nydia-popup-accounts-header');
+      const accountsTitle = createElement('div', 'nydia-popup-accounts-title',
+        'Select an account to sign in'
+      );
+      const accountsCount = createElement('div', 'nydia-popup-accounts-count',
+        accounts.length.toString()
+      );
+      accountsHeader.appendChild(accountsTitle);
+      accountsHeader.appendChild(accountsCount);
+      content.appendChild(accountsHeader);
+
+      const accountsList = createElement('div', 'nydia-popup-accounts-list');
+      let selectedAccountId: string | null = null;
 
       accounts.forEach((account) => {
-        const listItem = document.createElement('li');
-        listItem.className = 'account-item';
+        const accountItem = createElement('div', 'nydia-popup-account-item');
+        accountItem.dataset.credentialId = account.credentialId;
 
-        const accountInfo = document.createElement('div');
-        accountInfo.className = 'account-info';
+        const accountLeft = createElement('div', 'nydia-popup-account-left');
+        const accountIconBox = createElement('div', 'nydia-popup-account-icon');
+        const accountUserSvg = createSvgElement(icons.user);
+        if (accountUserSvg) accountIconBox.appendChild(accountUserSvg);
 
-        // Add user icon
-        const userWrapper = document.createElement('div');
-        userWrapper.innerHTML = user;
-        const userIcon = userWrapper.firstElementChild;
-        if (userIcon) {
-          userIcon.classList.add('icon', 'user-icon');
-          accountInfo.appendChild(userIcon);
-        }
+        const accountName = createElement('div', 'nydia-popup-account-name', account.username);
 
-        const username = document.createElement('span');
-        username.textContent = account.username;
-        accountInfo.appendChild(username);
+        accountLeft.appendChild(accountIconBox);
+        accountLeft.appendChild(accountName);
 
-        // Account selection handler
-        listItem.onclick = async () => {
-          try {
-            listItem.classList.add('selected');
-            const result = await onAction(options, account.credentialId);
+        const accountCheckBox = createElement('div', 'nydia-popup-account-check');
+        const checkSvg = createSvgElement(icons.check);
+        if (checkSvg) accountCheckBox.appendChild(checkSvg);
 
-            if (result.error) {
-              throw new Error(result.error);
-            }
+        accountItem.appendChild(accountLeft);
+        accountItem.appendChild(accountCheckBox);
 
-            document.body.removeChild(popup);
-            resolve(result);
-          } catch (error: any) {
-            logError('Authentication error', error);
-            const errorMessage = document.createElement('p');
-            errorMessage.style.color = 'red';
-            errorMessage.textContent = `Error: ${error.message}`;
-            popup.insertBefore(errorMessage, buttonContainer);
-          }
-        };
+        accountItem.addEventListener('click', () => {
+          // Deselect all
+          accountsList.querySelectorAll('.nydia-popup-account-item').forEach(item => {
+            item.classList.remove('selected');
+          });
+          // Select this one
+          accountItem.classList.add('selected');
+          selectedAccountId = account.credentialId;
 
-        listItem.appendChild(accountInfo);
-        accountList.appendChild(listItem);
+          // Enable the action button when account is selected
+          actionButton.disabled = false;
+        });
+
+        accountsList.appendChild(accountItem);
       });
 
-      popup.appendChild(accountList);
-    } else {
-      const actionButton = document.createElement('button');
-      actionButton.textContent = operationType === 'create' ? 'Create Passkey!' : 'Use Passkey!';
+      content.appendChild(accountsList);
 
-      actionButton.onclick = async () => {
-        try {
-          actionButton.disabled = true;
-          actionButton.textContent =
-            operationType === 'create' ? 'Creating...' : 'Authenticating...';
-
-          const result = await onAction(options);
-
-          actionButton.textContent =
-            operationType === 'create' ? 'Passkey Created!' : 'Authentication Successful!';
-
-          if (result.error) {
-            throw new Error(result.error);
-          }
-
-          document.body.removeChild(popup);
-          resolve(result);
-        } catch (error: any) {
-          logError(
-            `Error during ${operationType === 'create' ? 'Passkey creation' : 'authentication'}`,
-            error,
-          );
-          const errorMessage = document.createElement('p');
-          errorMessage.style.color = 'red';
-          errorMessage.textContent = `Error: ${error.message}`;
-          popup.insertBefore(errorMessage, buttonContainer);
-          actionButton.disabled = false;
-          actionButton.textContent =
-            operationType === 'create' ? 'Create Passkey!' : 'Use Passkey!';
-        }
-      };
-      buttonContainer.appendChild(actionButton);
+      // Store selected account getter
+      (popup as any).__getSelectedAccountId = () => selectedAccountId;
     }
 
-    const closeButton = document.createElement('button');
-    closeButton.textContent = 'Cancel';
-    closeButton.onclick = () => {
-      document.body.removeChild(popup);
+    // === Buttons ===
+    const buttonContainer = createElement('div', 'nydia-popup-buttons');
+
+    // Keyboard event handler for Escape key (defined early to be used in cleanup)
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' || event.keyCode === 27) {
+        closePopup();
+      }
+    };
+
+    // Function to close popup and cleanup event listeners
+    const closePopup = () => {
+      document.body.removeChild(overlay);
+      document.removeEventListener('keydown', handleEscapeKey);
       resolve('closed');
     };
-    buttonContainer.appendChild(closeButton);
 
-    popup.appendChild(buttonContainer);
-    document.body.appendChild(popup);
+    // Cleanup function for successful action
+    const cleanupListeners = () => {
+      document.removeEventListener('keydown', handleEscapeKey);
+    };
+
+    const cancelButton = createElement('button', 'nydia-popup-btn nydia-popup-btn-cancel', 'Cancel');
+    cancelButton.addEventListener('click', () => {
+      closePopup();
+    });
+
+    const actionButton = createElement('button',
+      `nydia-popup-btn nydia-popup-btn-action ${isCreateMode ? 'gradient' : ''}`
+    ) as HTMLButtonElement;
+
+    const actionIconBox = createElement('span', 'nydia-popup-btn-icon');
+    const lockSvg = createSvgElement(icons.lock);
+    if (lockSvg) actionIconBox.appendChild(lockSvg);
+
+    const actionText = createElement('span', 'nydia-popup-btn-text',
+      isCreateMode ? 'Create passkey' : 'Use passkey'
+    );
+
+    actionButton.appendChild(actionIconBox);
+    actionButton.appendChild(actionText);
+
+    // Disable button by default in get mode until account is selected
+    if (!isCreateMode && accounts && accounts.length > 0) {
+      actionButton.disabled = true;
+    }
+
+    // Action button handler
+    actionButton.addEventListener('click', async () => {
+      try {
+        // Disable button during processing
+        actionButton.disabled = true;
+        actionButton.classList.add('loading');
+
+        // Replace icon with spinner
+        actionIconBox.innerHTML = '';
+        const spinnerSvg = createSvgElement(icons.spinner);
+        if (spinnerSvg) {
+          spinnerSvg.classList.add('spin');
+          actionIconBox.appendChild(spinnerSvg);
+        }
+        actionText.textContent = 'Processing...';
+
+        // Get selected account if in get mode
+        let selectedCredentialId: string | undefined;
+        if (!isCreateMode) {
+          selectedCredentialId = (popup as any).__getSelectedAccountId?.();
+          if (!selectedCredentialId) {
+            throw new Error('Please select an account');
+          }
+        }
+
+        const result = await onAction(options, selectedCredentialId);
+
+        // Check if result has error
+        if (result && typeof result === 'object' && 'error' in result) {
+          const errorMsg = (result as { error: unknown }).error;
+          throw new Error(typeof errorMsg === 'string' ? errorMsg : String(errorMsg));
+        }
+
+        document.body.removeChild(overlay);
+        cleanupListeners();
+        resolve(result);
+      } catch (error: unknown) {
+        logError('[Popup] Action error', error);
+
+        // Show error message
+        const existingError = content.querySelector('.nydia-popup-error');
+        if (existingError) existingError.remove();
+
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        const errorMessage = createElement('div', 'nydia-popup-error', `Error: ${errorMsg}`);
+        content.insertBefore(errorMessage, buttonContainer);
+
+        // Reset button
+        actionButton.disabled = false;
+        actionButton.classList.remove('loading');
+
+        actionIconBox.innerHTML = '';
+        const lockSvg = createSvgElement(icons.lock);
+        if (lockSvg) actionIconBox.appendChild(lockSvg);
+        actionText.textContent = isCreateMode ? 'Create passkey' : 'Use passkey';
+      }
+    });
+
+    buttonContainer.appendChild(cancelButton);
+    buttonContainer.appendChild(actionButton);
+    content.appendChild(buttonContainer);
+
+    // === Assemble popup ===
+    popup.appendChild(header);
+    popup.appendChild(domainInfo);
+    popup.appendChild(content);
+    overlay.appendChild(popup);
+
+    // Listen for Escape key press
+    document.addEventListener('keydown', handleEscapeKey);
+
+    // Add to DOM
+    document.body.appendChild(overlay);
+
+    // Trigger fade-in animation
+    requestAnimationFrame(() => {
+      overlay.classList.add('show');
+    });
   });
 }
 
