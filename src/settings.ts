@@ -1,7 +1,6 @@
-import { icons } from './ui/icons/menu';
-
 import { getSettings as storeGetSettings, saveSettings as storeSaveSettings } from './store';
 import { RenterdSettings } from './types';
+import { icons } from './ui/icons/menu';
 
 // Export notification interface so menu.ts can import it
 export interface NotificationDisplayer {
@@ -184,7 +183,35 @@ export async function showSettingsForm(): Promise<void> {
   passkeyList.appendChild(form);
 }
 
-// Test connection to renterd
+// Auto-detect protocol by trying HTTPS first, then HTTP
+async function detectProtocol(settings: RenterdSettings): Promise<'http' | 'https'> {
+  const protocols: Array<'https' | 'http'> = ['https', 'http'];
+
+  for (const protocol of protocols) {
+    const url = `${protocol}://${settings.serverAddress}:${settings.serverPort}/api/worker/state`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: 'Basic ' + btoa(`username:${settings.password}`),
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      if (response.ok) return protocol;
+    } catch {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  throw new Error('Failed to connect');
+}
+
+// Test connection to renterd (only tests, does not save)
 async function testConnection(form: HTMLFormElement) {
   const settings = getSettingsFromForm(form);
   if (!validateSettings(settings)) {
@@ -203,24 +230,7 @@ async function testConnection(form: HTMLFormElement) {
     testButton.textContent = 'Testing...';
     testButton.disabled = true;
 
-    const url = `http://${settings.serverAddress}:${settings.serverPort}/api/worker/state`;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: 'Basic ' + btoa(`root:${settings.password}`),
-      },
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+    await detectProtocol(settings);
 
     notificationDisplayer.showNotification('success', 'Success!', 'Connection successful.');
   } catch (error: unknown) {
@@ -264,6 +274,28 @@ async function saveSettingsFromForm(form: HTMLFormElement) {
       'Please fill out all fields correctly.',
     );
     return;
+  }
+
+  const prev = await getSettings();
+
+  const hostChanged =
+    !prev ||
+    prev.serverAddress !== settings.serverAddress ||
+    prev.serverPort !== settings.serverPort;
+
+  if (hostChanged) {
+    try {
+      settings.serverProtocol = await detectProtocol(settings);
+    } catch {
+      settings.serverProtocol = prev?.serverProtocol;
+      notificationDisplayer.showNotification(
+        'warning',
+        'Warning',
+        "Saved, but connection couldn't be checked.",
+      );
+    }
+  } else {
+    settings.serverProtocol = prev?.serverProtocol;
   }
 
   await storeSaveSettings(settings);
