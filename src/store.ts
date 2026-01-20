@@ -202,7 +202,7 @@ export async function getAllStoredCredentialsFromDB(): Promise<StoredCredential[
     try {
       out.push(await decryptCredential(r));
     } catch (e) {
-      logError('decrypt error', e);
+      logError('[Store] decrypt error', e);
     }
   }
   return out;
@@ -258,10 +258,10 @@ export async function updateCredentialCounter(credentialId: string): Promise<voi
         encUnsynced.isSynced = true;
         await saveEncryptedCredential(encUnsynced);
       } else {
-        logError('counter sync Sia', res.error);
+        logError('[Store] counter sync Sia', res.error);
       }
     }).catch((err) => {
-      logError('Error in async upload', err);
+      logError('[Store] Error in async upload', err);
     });
   });
 
@@ -406,7 +406,7 @@ export async function handleMessageInBackground(message: BackgroundMessage): Pro
         throw new Error(`Unknown message type: ${message.type}`);
     }
   } catch (e: unknown) {
-    logError('[store] background handler error', e);
+    logError('[Store] background handler error', e);
     const message = e instanceof Error ? e.message : String(e);
     return { error: message };
   }
