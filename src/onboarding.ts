@@ -191,24 +191,43 @@ export class OnboardingController {
 
   // Secure key transfer using RSA-OAEP
   private async secureKeyTransfer(derivedKey: CryptoKey): Promise<void> {
+    type WrappingPublicKeyResponse = {
+      error?: string;
+      publicKey?: number[];
+    };
+
+    type StoreWrappedKeyResponse = {
+      error?: string;
+      status?: string;
+    };
+
     let publicKeyBuffer: Uint8Array | null = null;
     let wrappedKeyBuffer: ArrayBuffer | null = null;
 
     try {
       // Step 1: Request public key from background
-      const publicKeyResponse = await browser.runtime.sendMessage({
+      const publicKeyResponse = (await browser.runtime.sendMessage({
         type: 'getWrappingPublicKey',
-      });
+      })) as WrappingPublicKeyResponse | undefined;
+
+      if (!publicKeyResponse || typeof publicKeyResponse !== 'object') {
+        throw new Error('Invalid public key response');
+      }
 
       if (publicKeyResponse.error) {
         throw new Error(publicKeyResponse.error);
       }
 
+      if (!Array.isArray(publicKeyResponse.publicKey)) {
+        throw new Error('Missing public key');
+      }
+
       // Step 2: Import the public key
       publicKeyBuffer = new Uint8Array(publicKeyResponse.publicKey);
+      const publicKeyData = publicKeyBuffer.slice();
       const publicKey = await crypto.subtle.importKey(
         'spki',
-        publicKeyBuffer,
+        publicKeyData,
         {
           name: 'RSA-OAEP',
           hash: 'SHA-256',
@@ -223,10 +242,14 @@ export class OnboardingController {
       });
 
       // Step 4: Send wrapped key to background
-      const storeResponse = await browser.runtime.sendMessage({
+      const storeResponse = (await browser.runtime.sendMessage({
         type: 'storeWrappedKey',
         wrappedKey: Array.from(new Uint8Array(wrappedKeyBuffer)),
-      });
+      })) as StoreWrappedKeyResponse | undefined;
+
+      if (!storeResponse || typeof storeResponse !== 'object') {
+        throw new Error('Invalid store response');
+      }
 
       if (storeResponse.error) {
         throw new Error(storeResponse.error);
