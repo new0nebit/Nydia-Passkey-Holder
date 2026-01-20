@@ -5,7 +5,7 @@ import {
   getAvailableCredentials,
   handleGetAssertion,
 } from './authenticator';
-import { logError, logInfo } from './logger';
+import { logDebug, logError, logInfo } from './logger';
 import {
   downloadPasskeyFromRenterd,
   getPasskeysFromRenterd,
@@ -16,9 +16,9 @@ import {
   getSettings,
   handleMessageInBackground,
   isBackgroundContext,
-  openDB,
   saveEncryptedCredential,
-  SETTINGS_STORE,
+  getMasterKeyIfAvailable,
+  setMasterKey,
 } from './store';
 import {
   BackgroundMessage,
@@ -31,45 +31,12 @@ import {
 } from './types';
 import { toArrayBuffer } from './utils/buffer';
 
-// masterKey and RSA wrapping key pair
-let masterKey: CryptoKey | null = null;
+// RSA wrapping key pair for secure key transfer
 let wrappingKeyPair: CryptoKeyPair | null = null;
-
-async function loadMasterKey(): Promise<CryptoKey | null> {
-  if (masterKey) return masterKey;
-
-  const db = await openDB();
-  const rec = await new Promise<{ key?: CryptoKey } | undefined>((r) => {
-    const request = db
-      .transaction(SETTINGS_STORE, 'readonly')
-      .objectStore(SETTINGS_STORE)
-      .get('ephemeralKey');
-
-    request.onsuccess = () => r(request.result);
-  });
-
-  if (rec?.key) {
-    masterKey = rec.key;
-    logInfo('[Background] masterKey loaded');
-  }
-  return masterKey;
-}
-
-async function persistKey(key: CryptoKey): Promise<void> {
-  const db = await openDB();
-  await new Promise<void>((r) => {
-    db
-      .transaction(SETTINGS_STORE, 'readwrite')
-      .objectStore(SETTINGS_STORE)
-      .put({ id: 'ephemeralKey', key }).onsuccess = () => r();
-  });
-  masterKey = key;
-  logInfo('[Background] masterKey persisted');
-}
 
 // RSA key pair generation for secure key transfer
 async function initializeWrappingKey(): Promise<CryptoKeyPair> {
-  logInfo('[Background] Generating RSA-OAEP key pair for secure transfer');
+  logDebug('[Background] Generating RSA-OAEP key pair for secure transfer');
 
   const keyPair = await crypto.subtle.generateKey(
     {
@@ -82,7 +49,7 @@ async function initializeWrappingKey(): Promise<CryptoKeyPair> {
     ['wrapKey', 'unwrapKey'],
   );
 
-  logInfo('[Background] RSA-OAEP key pair generated');
+  logDebug('[Background] RSA-OAEP key pair generated');
   return keyPair;
 }
 
@@ -129,24 +96,30 @@ function patchSelfSend(local: (m: BackgroundMessage) => Promise<unknown>) {
 }
 
 function normalizeDescriptor(
-  arr?: SerializedCredentialDescriptor[],
+  descriptors?: SerializedCredentialDescriptor[],
 ): PublicKeyCredentialDescriptor[] | undefined {
-  return arr?.map((cred) => ({
-    type: (cred.type ?? 'public-key') as PublicKeyCredentialType,
-    id: toArrayBuffer(cred.id),
-    transports: cred.transports as AuthenticatorTransport[] | undefined,
+  return descriptors?.map((descriptor) => ({
+    type: (descriptor.type ?? 'public-key') as PublicKeyCredentialType,
+    id: toArrayBuffer(descriptor.id),
+    transports: descriptor.transports as AuthenticatorTransport[] | undefined,
   }));
 }
 
 function toCreationOptions(options: SerializedCreationOptions): CredentialCreationOptions {
   const { publicKey } = options;
 
-  if (!publicKey?.challenge || !publicKey.user || !publicKey.pubKeyCredParams) {
-    throw new Error('Invalid options');
+  if (!publicKey?.challenge) {
+    throw new Error('Invalid options: challenge is required');
+  }
+  if (!publicKey.user) {
+    throw new Error('Invalid options: user is required');
+  }
+  if (!publicKey.pubKeyCredParams) {
+    throw new Error('Invalid options: pubKeyCredParams is required');
   }
 
   if (!publicKey.rp?.name) {
-    throw new Error('Invalid RP info: rp.name is required');
+    throw new Error('Invalid options: rp.name is required');
   }
 
   const rpId = publicKey.rp.id ?? new URL(options.origin ?? '').hostname;
@@ -249,7 +222,7 @@ async function handleUploadUnsyncedPasskeys(uniqueIds: string[]) {
 // Handles syncing passkeys from renterd to the extension
 async function handleSyncFromSia() {
   const settings = await getSettings();
-  if (!settings) return { success: false, error: 'no renterd settings' };
+  if (!settings) return { success: false, error: 'No renterd settings' };
 
   const files = await getPasskeysFromRenterd(settings);
   let synced = 0,
@@ -280,13 +253,13 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
   try {
     switch (msg.type) {
       case 'createCredential':
-        if (!(await loadMasterKey())) return { error: 'masterKeyMissing' };
-        if (!msg.options?.publicKey) return { error: 'Invalid options' };
+        if (!(await getMasterKeyIfAvailable())) return { error: 'masterKeyMissing' };
+        if (!msg.options?.publicKey) return { error: 'Invalid options: publicKey is required' };
         return createCredential(toCreationOptions(msg.options as SerializedCreationOptions));
 
       case 'handleGetAssertion':
-        if (!(await loadMasterKey())) return { error: 'masterKeyMissing' };
-        if (!msg.options?.publicKey) return { error: 'Invalid options' };
+        if (!(await getMasterKeyIfAvailable())) return { error: 'masterKeyMissing' };
+        if (!msg.options?.publicKey) return { error: 'Invalid options: publicKey is required' };
         return handleGetAssertion(
           toGetAssertionOptions(msg.options as SerializedRequestOptions),
           msg.selectedCredentialId,
@@ -359,7 +332,7 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
           );
 
           // Persist the unwrapped key
-          await persistKey(unwrappedKey);
+          await setMasterKey(unwrappedKey);
 
           // Clean up RSA keys after successful storage
           wrappingKeyPair = null;
@@ -368,7 +341,7 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
           secureCleanup(msg.wrappedKey);
           secureCleanup(wrappedKeyBytes);
 
-          logInfo('[Background] Master key securely stored and RSA keys cleaned up');
+          logDebug('[Background] Master key securely stored and RSA keys cleaned up');
           return { status: 'ok' };
         } catch (e: unknown) {
           logError('[Background] Failed to unwrap and store key', e);
@@ -404,16 +377,16 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
 
 // Bootstrap
 logInfo('[Background] bootstrap');
-logInfo('[Background] isBackgroundContext', isBackgroundContext());
+logDebug('[Background] isBackgroundContext', isBackgroundContext());
 
 patchSelfSend(router);
-browser.runtime.onMessage.addListener(async (message: unknown) => {
+browser.runtime.onMessage.addListener((message: unknown) => {
   if (!isBackgroundMessage(message)) {
     logError('[Background] Invalid message format', message);
-    return { error: 'Invalid message format' };
+    return Promise.resolve({ error: 'Invalid message format' });
   }
   return router(message);
 });
 
-loadMasterKey().catch(logError);
+getMasterKeyIfAvailable().catch(logError);
 logInfo('[Background] ready');
