@@ -1,5 +1,3 @@
-// settings.ts
-
 import { icons } from './icons';
 import { getSettings as storeGetSettings, saveSettings as storeSaveSettings } from './store';
 import { RenterdSettings } from './types';
@@ -224,8 +222,8 @@ async function testConnection(form: HTMLFormElement) {
     }
 
     notificationDisplayer.showNotification('success', 'Success!', 'Connection successful.');
-  } catch (error: any) {
-    if (error.name === 'AbortError') {
+  } catch (error: unknown) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
       notificationDisplayer.showNotification(
         'error',
         'Error!',
