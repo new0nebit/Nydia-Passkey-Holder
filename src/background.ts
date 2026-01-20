@@ -217,6 +217,16 @@ function isValidEncryptedRecord(x: unknown): x is EncryptedRecord {
   return Boolean(x && typeof x === 'object' && 'uniqueId' in x && 'iv' in x && 'data' in x);
 }
 
+// Type guard for BackgroundMessage
+function isBackgroundMessage(msg: unknown): msg is BackgroundMessage {
+  return (
+    typeof msg === 'object' &&
+    msg !== null &&
+    'type' in msg &&
+    typeof (msg as { type: unknown }).type === 'string'
+  );
+}
+
 // Handles the upload of a single passkey to renterd
 async function handleUploadToSia(uniqueId: string) {
   // Get encrypted record directly from DB
@@ -417,7 +427,13 @@ logInfo('[Background] bootstrap');
 logInfo('[Background] isBackgroundContext', isBackgroundContext());
 
 patchSelfSend(router);
-browser.runtime.onMessage.addListener((message: unknown) => router(message as BackgroundMessage));
+browser.runtime.onMessage.addListener((message: unknown) => {
+  if (!isBackgroundMessage(message)) {
+    logError('[Background] Invalid message format', message);
+    return Promise.resolve({ error: 'Invalid message format' });
+  }
+  return router(message);
+});
 
 loadMasterKey().catch(logError);
 logInfo('[Background] ready');
