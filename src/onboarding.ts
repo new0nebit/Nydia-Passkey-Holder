@@ -1,7 +1,7 @@
 import browser from 'browser-api';
 
+import './ui/styles/onboarding.css';
 import { logError } from './logger';
-import './styles/onboarding.css';
 
 export class OnboardingController {
   private step = 0;
@@ -15,7 +15,7 @@ export class OnboardingController {
     this.container = root;
     this.render();
   }
-
+  
   private render(): void {
     const screen = div('onboarding-container');
     const content = div('content-wrapper');
@@ -100,22 +100,22 @@ export class OnboardingController {
       grid.append(cell);
     });
 
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.id = 'seed-stored';
-    cb.className = 'checkbox';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = 'seed-stored';
+    checkbox.className = 'checkbox';
 
     const label = document.createElement('label');
-    label.htmlFor = cb.id;
+    label.htmlFor = checkbox.id;
     label.textContent = 'I have safely stored the seed phrase';
     label.className = 'checkbox-label';
 
     const next = button('Continue', 'btn', () => void this.confirmSeedStored());
     next.disabled = true;
-    cb.onchange = () => (next.disabled = !cb.checked);
+    checkbox.onchange = () => (next.disabled = !checkbox.checked);
 
     const cbWrap = div('checkbox-wrapper');
-    cbWrap.append(cb, label);
+    cbWrap.append(checkbox, label);
 
     wrap.append(grid, cbWrap, next);
     return wrap;
@@ -128,14 +128,14 @@ export class OnboardingController {
       span('Enter the 12 words separated by spaces', 'subtitle'),
     );
 
-    const ta = document.createElement('textarea');
-    ta.className = 'seed-input';
-    ta.oninput = (e) => (this.inputSeedPhrase = (e.target as HTMLTextAreaElement).value);
+    const textarea = document.createElement('textarea');
+    textarea.className = 'seed-input';
+    textarea.oninput = (e) => (this.inputSeedPhrase = (e.target as HTMLTextAreaElement).value);
 
     const err = div('error-message hidden');
 
     wrap.append(
-      ta,
+      textarea,
       err,
       button('Verify', 'btn', () => void this.verifySeed(err)),
       button('Back', 'btn-back', () => {
@@ -393,24 +393,24 @@ export class OnboardingController {
 
 // DOM helpers
 function div(cls: string): HTMLDivElement {
-  const d = document.createElement('div');
-  d.className = cls;
-  return d;
+  const element = document.createElement('div');
+  element.className = cls;
+  return element;
 }
 
 function span(text: string, cls = ''): HTMLSpanElement {
-  const s = document.createElement('span');
-  if (cls) s.className = cls;
-  s.textContent = text;
-  return s;
+  const element = document.createElement('span');
+  if (cls) element.className = cls;
+  element.textContent = text;
+  return element;
 }
 
 function button(label: string, cls: string, onClick: () => void): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.className = cls;
-  b.textContent = label;
-  b.onclick = onClick;
-  return b;
+  const element = document.createElement('button');
+  element.className = cls;
+  element.textContent = label;
+  element.onclick = onClick;
+  return element;
 }
 
 const bip39EnglishWordList = [

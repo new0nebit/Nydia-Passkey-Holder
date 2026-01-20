@@ -23,7 +23,7 @@ export default (env, argv) => {
         import: [
           './src/menu.ts',
           './src/settings.ts',
-          './src/styles/main.css'
+          './src/ui/styles/main.css'
         ],
       },
       popup: './src/popup.ts'
@@ -57,6 +57,10 @@ export default (env, argv) => {
               }
             },
           ],
+        },
+        {
+          test: /\.svg$/,
+          type: 'asset/source',
         },
       ],
     },
