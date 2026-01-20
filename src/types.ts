@@ -3,6 +3,40 @@ export type WebAuthnOperationType = 'create' | 'get';
 export type BinaryLike = ArrayBuffer | ArrayBufferView;
 export type BinaryOrBase64 = BinaryLike | string;
 
+export interface SerializedCredentialDescriptor {
+  id: string | BinaryLike;
+  type?: string;
+  transports?: string[];
+}
+
+export interface SerializedCreationOptions {
+  publicKey: {
+    rp: { id?: string; name?: string };
+    user: {
+      id: string | BinaryLike;
+      name: string;
+      displayName?: string;
+    };
+    challenge: string | BinaryLike;
+    pubKeyCredParams: PublicKeyCredentialParameters[];
+    excludeCredentials?: SerializedCredentialDescriptor[];
+  };
+  origin?: string;
+}
+
+export interface SerializedRequestOptions {
+  publicKey: {
+    challenge: string | BinaryLike;
+    rpId?: string;
+    allowCredentials?: SerializedCredentialDescriptor[];
+  };
+  origin?: string;
+}
+
+export type SerializedPublicKeyOptions =
+  | SerializedCreationOptions
+  | SerializedRequestOptions;
+
 export type PublicKeyCredentialCreationOptions =
   globalThis.PublicKeyCredentialCreationOptions;
 export type PublicKeyCredentialRequestOptions =
@@ -22,6 +56,31 @@ export interface GetAssertionOptions {
     challenge: BinaryOrBase64;
   };
   origin: string;
+}
+
+export interface AttestationResponse {
+  type: 'public-key';
+  id: string;
+  rawId: string;
+  response: {
+    clientDataJSON: string;
+    attestationObject: string;
+    authenticatorData: string;
+    publicKeyAlgorithm: number;
+    publicKeyDER: string;
+  };
+}
+
+export interface AssertionResponse {
+  type: 'public-key';
+  id: string;
+  rawId: string;
+  response: {
+    clientDataJSON: string;
+    authenticatorData: string;
+    signature: string;
+    userHandle: string | null;
+  };
 }
 
 export interface StoredCredential {
@@ -48,13 +107,6 @@ export interface Account {
   creationTime?: number;
 }
 
-export interface RenterdSettings {
-  password: string;
-  serverAddress: string;
-  serverPort: number;
-  bucketName: string;
-}
-
 export interface EncryptedRecord {
   uniqueId: string;
   iv: string;
@@ -62,27 +114,20 @@ export interface EncryptedRecord {
   isSynced: boolean;
 }
 
-export interface AttestationResponse {
-  type: 'public-key';
-  id: string;
-  rawId: string;
-  response: {
-    clientDataJSON: string;
-    attestationObject: string;
-    authenticatorData: string;
-    publicKeyAlgorithm: number;
-    publicKeyDER: string;
-  };
+export interface RenterdSettings {
+  password: string;
+  serverAddress: string;
+  serverPort: number;
+  bucketName: string;
 }
 
-export interface AssertionResponse {
-  type: 'public-key';
-  id: string;
-  rawId: string;
-  response: {
-    clientDataJSON: string;
-    authenticatorData: string;
-    signature: string;
-    userHandle: string | null;
-  };
+export interface BackgroundMessage {
+  type: string;
+  options?: SerializedPublicKeyOptions | GetAssertionOptions | CredentialCreationOptions;
+  rpId?: string;
+  selectedCredentialId?: string;
+  uniqueId?: string;
+  uniqueIds?: string[];
+  wrappedKey?: number[];
+  [key: string]: unknown;
 }
