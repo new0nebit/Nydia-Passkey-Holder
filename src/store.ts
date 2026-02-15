@@ -1,5 +1,5 @@
 import { Ed25519, ES256, RS256, SigningAlgorithm } from './algorithms';
-import { logDebug, logError } from './logger';
+import { logDebug, logError, logWarn } from './logger';
 import { uploadPasskeyDirect } from './sia';
 import {
   BackgroundMessage,
@@ -251,7 +251,7 @@ export async function updateCredentialCounter(credentialId: string): Promise<voi
         encUnsynced.isSynced = true;
         await saveEncryptedCredential(encUnsynced);
       } else {
-        logError('[Store] counter sync Sia', result.error);
+        logWarn('[Store] counter sync Sia', result.error);
       }
     }).catch((error) => {
       logError('[Store] Error in async upload', error);
