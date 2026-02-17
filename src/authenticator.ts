@@ -5,6 +5,7 @@ import {
   createUniqueId,
   findCredential,
   getAllStoredCredentials,
+  getEncryptedCredentialByUniqueId,
   loadPrivateKey,
   savePrivateKey,
   updateCredentialCounter,
@@ -146,7 +147,7 @@ function getAlgorithmName(algorithm: SigningAlgorithm): AlgorithmName {
 // Create a new credential
 export async function createCredential(
   options: CredentialCreationOptions,
-): Promise<AttestationResponse | null> {
+): Promise<AttestationResponse> {
   logInfo('[Authenticator] Starting credential creation...');
   logDebug('[Authenticator] Options', options);
 
@@ -186,13 +187,15 @@ export async function createCredential(
     const userIdHash = base64UrlEncode(userIdHashBuffer);
     logDebug('[Authenticator] userIdHash generated', userIdHash);
 
-    // Check for existing credentials
-    const storedCredentials = await getAllStoredCredentials();
-    const existingCredential = storedCredentials.find((cred) => cred.userIdHash === userIdHash);
-
-    if (existingCredential) {
-      logWarn('[Authenticator] Existing credential found - aborting creation', { rpId });
-      return null;
+    // Check excludeCredentials
+    const excludeList = options.publicKey.excludeCredentials ?? [];
+    for (const descriptor of excludeList) {
+      const descriptorId = base64UrlEncode(toArrayBuffer(descriptor.id as ArrayBuffer));
+      const uniqueId = await createUniqueId(rpId, descriptorId);
+      if (await getEncryptedCredentialByUniqueId(uniqueId)) {
+        logDebug('[Authenticator] excludeCredentials match found - aborting creation', { rpId, credentialId: descriptorId, uniqueId });
+        throw new DOMException('A passkey for this account already exists.', 'InvalidStateError');
+      }
     }
 
     // Generate key pair
@@ -259,7 +262,7 @@ export async function createCredential(
 
     // Create authenticator data
     const rpIdHash = new Uint8Array(await sha256(new TextEncoder().encode(rpId)));
-    const flags = 0x45; // UP=1 (User Present), UV=1 (User Verified), AT=1 (Attested Credential Data Present)
+    const flags = 0x45; // UP=1 (User Present), UV=1 (User Verified), AT=1 (Attested Credential Data)
     const signCount = new Uint8Array([0x00, 0x00, 0x00, 0x00]); // Initial sign count
     const credentialIdLength = new Uint8Array([
       (credentialId.length >> 8) & 0xff,
@@ -340,7 +343,9 @@ export async function createCredential(
     return createResponse;
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logError(`[Authenticator] Error in createCredential: ${errorMessage}`, error);
+    if (!(error instanceof DOMException && error.name === 'InvalidStateError')) {
+      logError(`[Authenticator] Error in createCredential: ${errorMessage}`, error);
+    }
     throw error;
   }
 }
