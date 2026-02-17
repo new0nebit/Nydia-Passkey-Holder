@@ -180,7 +180,7 @@ export class OnboardingController {
   }
 
   private async verifySeed(errBox: HTMLElement): Promise<void> {
-    const res = this.validateSeedPhrase(this.inputSeedPhrase);
+    const res = await this.validateSeedPhrase(this.inputSeedPhrase);
     if (!res.valid) {
       errBox.textContent = res.errors.join('. ');
       errBox.classList.remove('hidden');
@@ -347,12 +347,57 @@ export class OnboardingController {
     return words.join(' ');
   }
 
-  private validateSeedPhrase(txt: string): { valid: boolean; errors: string[] } {
+  private async validateSeedPhrase(
+    txt: string,
+  ): Promise<{ valid: boolean; errors: string[] }> {
     const words = txt.trim().toLowerCase().split(/\s+/);
     const errors: string[] = [];
-    if (words.length !== 12) errors.push(`Exactly 12 words required (got ${words.length})`);
-    const bad = words.filter((w) => !bip39EnglishWordList.includes(w));
-    if (bad.length) errors.push(`Words not in dictionary: ${bad.join(', ')}`);
+    if (words.length !== 12) {
+      errors.push(`Exactly 12 words required (got ${words.length})`);
+      return { valid: false, errors };
+    }
+
+    const bad = words.filter((w) => !bip39WordMap.has(w));
+    if (bad.length) {
+      errors.push(`Words not in dictionary: ${bad.join(', ')}`);
+      return { valid: false, errors };
+    }
+
+    // Reconstruct entropy from mnemonic words and verify the BIP39 checksum
+    const indices = words.map((w) => BigInt(bip39WordMap.get(w)!));
+
+    let h = 0n;
+    let l = 0n;
+    for (let i = 0; i < 11; i++) {
+      h = (h << 11n) | (l >> 53n);
+      l = ((l << 11n) | indices[i]) & ((1n << 64n) - 1n);
+    }
+    const lastIdx = indices[11];
+    const checksum = Number(lastIdx & 0xfn);
+    const lastEntropy = lastIdx >> 4n;
+    h = (h << 7n) | (l >> 57n);
+    l = ((l << 7n) | lastEntropy) & ((1n << 64n) - 1n);
+
+    const entropy = new Uint8Array(16);
+    for (let i = 7; i >= 0; i--) {
+      entropy[i] = Number(h & 0xffn);
+      h >>= 8n;
+    }
+    for (let i = 15; i >= 8; i--) {
+      entropy[i] = Number(l & 0xffn);
+      l >>= 8n;
+    }
+
+    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', entropy));
+    const expected = (hash[0] & 0xf0) >> 4;
+
+    this.secureCleanup(entropy);
+    this.secureCleanup(hash);
+
+    if (checksum !== expected) {
+      errors.push('One or more words may be incorrect. Check your seed phrase and try again.');
+    }
+
     return { valid: errors.length === 0, errors };
   }
 
@@ -440,3 +485,7 @@ const bip39EnglishWordList = [
   "yard", "year", "yellow", "you", "young", "youth",
   "zebra", "zero", "zone", "zoo"
 ];
+
+const bip39WordMap = new Map<string, number>(
+  bip39EnglishWordList.map((w, i) => [w, i]),
+);
