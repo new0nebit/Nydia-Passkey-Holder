@@ -182,8 +182,8 @@ async function handleUploadUnsyncedPasskeys(uniqueIds: string[]) {
       const { success } = await handleUploadToSia(uniqueId);
       if (success) uploaded++;
       else failed++;
-    } catch (e) {
-      logError(`[Background] Upload failed for ${uniqueId}`, e);
+    } catch (error: unknown) {
+      logError(`[Background] Upload failed for ${uniqueId}`, error);
       failed++;
     }
   }
@@ -212,8 +212,8 @@ async function handleSyncFromSia() {
       // Save encrypted record directly to DB
       await saveEncryptedCredential(encryptedRecord);
       synced++;
-    } catch (e) {
-      logError(`[Background] Sync failed for ${fileName}`, e);
+    } catch (error: unknown) {
+      logError(`[Background] Sync failed for ${fileName}`, error);
       failed++;
     }
   }
@@ -227,7 +227,7 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
       case 'createCredential':
         if (!(await getMasterKeyIfAvailable())) return { error: 'masterKeyMissing' };
         if (!msg.options?.publicKey) return { error: 'Invalid options: publicKey is required' };
-        return createCredential(toCreationOptions(msg.options as SerializedCreationOptions));
+        return await createCredential(toCreationOptions(msg.options as SerializedCreationOptions));
 
       case 'handleGetAssertion':
         if (!(await getMasterKeyIfAvailable())) return { error: 'masterKeyMissing' };
@@ -269,8 +269,8 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
             algorithm: 'RSA-OAEP',
             hash: 'SHA-256',
           };
-        } catch (e: unknown) {
-          logError('[Background] Failed to export public key', e);
+        } catch (error: unknown) {
+          logError('[Background] Failed to export public key', error);
           return { error: 'Failed to generate wrapping key' };
         }
       }
@@ -315,20 +315,20 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
 
           logDebug('[Background] Master key securely stored and RSA keys cleaned up');
           return { status: 'ok' };
-        } catch (e: unknown) {
-          logError('[Background] Failed to unwrap and store key', e);
+        } catch (error: unknown) {
+          logError('[Background] Failed to unwrap and store key', error);
 
           // Clean up on error too
           wrappingKeyPair = null;
 
-          if (e instanceof DOMException) {
-            switch (e.name) {
+          if (error instanceof DOMException) {
+            switch (error.name) {
               case 'OperationError':
                 return { error: 'Failed to unwrap key - invalid or corrupted data' };
               case 'DataError':
                 return { error: 'Invalid key format' };
               default:
-                return { error: `Crypto operation failed: ${e.name}` };
+                return { error: `Crypto operation failed: ${error.name}` };
             }
           }
 
@@ -340,9 +340,15 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
       default:
         return handleMessageInBackground(msg);
     }
-  } catch (e: unknown) {
-    logError('[Background] router error', e);
-    const message = e instanceof Error ? e.message : String(e);
+  } catch (error: unknown) {
+    const isExpectedInvalidStateError =
+      error instanceof DOMException && error.name === 'InvalidStateError';
+
+    if (!isExpectedInvalidStateError) {
+      logError('[Background] router error', error);
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
     return { error: message };
   }
 }

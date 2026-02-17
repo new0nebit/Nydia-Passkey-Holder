@@ -275,7 +275,7 @@ class WebAuthnInterceptor {
       }
       return response;
     } catch (error: unknown) {
-      logDebug('[Dispatcher] Error creating passkey', error);
+      logDebug('[Dispatcher] Error creating passkey', error instanceof Error ? error.message : error);
       throw error;
     }
   }
