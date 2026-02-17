@@ -352,6 +352,7 @@
   font-size: 13px;
   margin-bottom: 16px;
   border: 1px solid #FECACA;
+  white-space: pre-line;
 }
 
 /* Buttons */

@@ -89,7 +89,10 @@ function showError(state: PopupState, message: string): void {
   const existingError = state.content.querySelector('.nydia-popup-error');
   if (existingError) existingError.remove();
 
-  const errorMessage = createElement('div', 'nydia-popup-error', `Error: ${message}`);
+  const text = message === 'masterKeyMissing'
+    ? 'Nydia is not set up yet.\nSet up a recovery phrase to start using passkeys.'
+    : message;
+  const errorMessage = createElement('div', 'nydia-popup-error', text);
   state.content.insertBefore(errorMessage, state.buttonContainer);
 
   resetActionButton(state);
