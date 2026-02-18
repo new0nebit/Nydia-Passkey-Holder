@@ -63,7 +63,6 @@ export interface StoredCredential {
   credentialId: string;
   rpId: string;
   privateKey: string;
-  iv: string;
   userHandle: string;
   publicKeyAlgorithm: number;
   counter: number;
