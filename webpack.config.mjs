@@ -84,6 +84,7 @@ export default (env, argv) => {
         filename: ({ chunk }) => {
           return chunk.name === 'popup' ? 'popup.css' : 'menu.css';
         },
+        chunkFilename: '[name].css',
       }),
       new CopyWebpackPlugin({
         patterns: [
