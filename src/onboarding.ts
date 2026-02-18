@@ -256,9 +256,6 @@ export class OnboardingController {
       }
     } finally {
       // Clean up all sensitive data
-      if (publicKeyBuffer) {
-        this.secureCleanup(publicKeyBuffer);
-      }
       if (wrappedKeyBuffer) {
         this.secureCleanup(new Uint8Array(wrappedKeyBuffer));
       }
