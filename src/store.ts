@@ -113,8 +113,8 @@ export async function setMasterKey(key: CryptoKey): Promise<void> {
 
 // encrypt / decrypt helpers
 async function encryptCredential(credential: StoredCredential): Promise<EncryptedRecord> {
-  // Remove isSynced before encryption to avoid storing it inside data
-  const { isSynced, ...withoutSync } = credential;
+  // Remove isSynced and uniqueId before encryption
+  const { isSynced, uniqueId, ...withoutSync } = credential;
 
   const key = await getMasterKey();
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -125,7 +125,7 @@ async function encryptCredential(credential: StoredCredential): Promise<Encrypte
   );
 
   const record: EncryptedRecord = {
-    uniqueId: credential.uniqueId,
+    uniqueId,
     iv: base64UrlEncode(iv),
     data: base64UrlEncode(new Uint8Array(ciphertext)),
     isSynced: isSynced,
@@ -142,6 +142,7 @@ async function decryptCredential(record: EncryptedRecord): Promise<StoredCredent
     new Uint8Array(base64UrlDecode(record.data)),
   );
   const storedCredential: StoredCredential = JSON.parse(new TextDecoder().decode(plaintext));
+  storedCredential.uniqueId = record.uniqueId;
   storedCredential.isSynced = record.isSynced ?? false;
   return storedCredential;
 }
@@ -283,8 +284,10 @@ export async function savePrivateKey(
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encryptedPkcs8 = await subtle.encrypt({ name: 'AES-GCM', iv }, key, pkcs8);
 
+  const uniqueId = await createUniqueId(rpId, base64UrlEncode(credentialId));
+
   const stored: StoredCredential = {
-    uniqueId: await createUniqueId(rpId, base64UrlEncode(credentialId)),
+    uniqueId,
     credentialId: base64UrlEncode(credentialId),
     rpId,
     userIdHash,
