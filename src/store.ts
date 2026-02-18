@@ -276,7 +276,6 @@ export async function savePrivateKey(
   privateKey: CryptoKey,
   userId: Uint8Array,
   publicKeyAlgorithm: number,
-  userIdHash: string,
   userName?: string,
 ): Promise<void> {
   const pkcs8 = await subtle.exportKey('pkcs8', privateKey);
@@ -290,7 +289,6 @@ export async function savePrivateKey(
     uniqueId,
     credentialId: base64UrlEncode(credentialId),
     rpId,
-    userIdHash,
     privateKey: base64UrlEncode(new Uint8Array(encryptedPkcs8)),
     iv: base64UrlEncode(iv),
     userHandle: base64UrlEncode(userId),

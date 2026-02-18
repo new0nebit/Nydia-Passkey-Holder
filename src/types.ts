@@ -62,7 +62,6 @@ export interface StoredCredential {
   uniqueId: string;
   credentialId: string;
   rpId: string;
-  userIdHash: string;
   privateKey: string;
   iv: string;
   userHandle: string;

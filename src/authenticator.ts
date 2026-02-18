@@ -182,11 +182,6 @@ export async function createCredential(
     const algorithm = chooseAlgorithm(options.publicKey.pubKeyCredParams);
     logDebug('[Authenticator] Chosen algorithm', getAlgorithmName(algorithm));
 
-    // Hash the user ID
-    const userIdHashBuffer = new Uint8Array(await sha256(userId));
-    const userIdHash = base64UrlEncode(userIdHashBuffer);
-    logDebug('[Authenticator] userIdHash generated', userIdHash);
-
     // Check excludeCredentials
     const excludeList = options.publicKey.excludeCredentials ?? [];
     for (const descriptor of excludeList) {
@@ -250,7 +245,6 @@ export async function createCredential(
       keyPair.privateKey,
       new Uint8Array(userId),
       publicKeyAlgorithm,
-      userIdHash,
       options.publicKey.user.name, // Pass the username
     );
     logDebug('[Authenticator] Private key saved');
