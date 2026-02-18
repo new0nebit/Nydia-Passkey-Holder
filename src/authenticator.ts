@@ -1,6 +1,6 @@
 import { Ed25519, ES256, RS256, SigningAlgorithm } from './algorithms';
 import { CBORValue, WebAuthnCBOR } from './cbor';
-import { logDebug, logError, logInfo, logWarn } from './logger';
+import { logDebug, logError, logInfo } from './logger';
 import {
   createUniqueId,
   findCredential,
@@ -249,7 +249,6 @@ export async function createCredential(
       rpId,
       keyPair.privateKey,
       new Uint8Array(userId),
-      cosePublicKey,
       publicKeyAlgorithm,
       userIdHash,
       options.publicKey.user.name, // Pass the username
