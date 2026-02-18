@@ -279,9 +279,6 @@ export async function savePrivateKey(
   userName?: string,
 ): Promise<void> {
   const pkcs8 = await subtle.exportKey('pkcs8', privateKey);
-  const key = await getMasterKey();
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encryptedPkcs8 = await subtle.encrypt({ name: 'AES-GCM', iv }, key, pkcs8);
 
   const uniqueId = await createUniqueId(rpId, base64UrlEncode(credentialId));
 
@@ -289,8 +286,7 @@ export async function savePrivateKey(
     uniqueId,
     credentialId: base64UrlEncode(credentialId),
     rpId,
-    privateKey: base64UrlEncode(new Uint8Array(encryptedPkcs8)),
-    iv: base64UrlEncode(iv),
+    privateKey: base64UrlEncode(new Uint8Array(pkcs8)),
     userHandle: base64UrlEncode(userId),
     publicKeyAlgorithm,
     counter: 0,
@@ -308,12 +304,7 @@ export async function loadPrivateKey(
   const credential = await getCredentialById(credentialId);
   if (!credential) throw new Error('Credential not found');
 
-  const key = await getMasterKey();
-  const pkcs8 = await subtle.decrypt(
-    { name: 'AES-GCM', iv: new Uint8Array(base64UrlDecode(credential.iv)) },
-    key,
-    new Uint8Array(base64UrlDecode(credential.privateKey)),
-  );
+  const pkcs8 = new Uint8Array(base64UrlDecode(credential.privateKey));
 
   let algorithmParams: EcKeyImportParams | RsaHashedImportParams | Algorithm;
   let signingAlgorithm: SigningAlgorithm;
