@@ -79,8 +79,8 @@ function resetActionButton(state: PopupState): void {
   state.cancelButton.disabled = false;
 
   state.actionIconBox.replaceChildren();
-  const lockSvg = createSvgElement(icons.lock);
-  if (lockSvg) state.actionIconBox.appendChild(lockSvg);
+  const passkeySvg = createSvgElement(icons.passkey);
+  if (passkeySvg) state.actionIconBox.appendChild(passkeySvg);
 
   state.actionText.textContent = state.isCreateMode ? 'Create passkey' : 'Use passkey';
 }
@@ -261,8 +261,8 @@ function initPopup(sessionId: string, payload: PopupInitPayload, port: MessagePo
   ) as HTMLButtonElement;
 
   const actionIconBox = createElement('span', 'nydia-popup-btn-icon');
-  const lockSvg = createSvgElement(icons.lock);
-  if (lockSvg) actionIconBox.appendChild(lockSvg);
+  const passkeySvg = createSvgElement(icons.passkey);
+  if (passkeySvg) actionIconBox.appendChild(passkeySvg);
 
   const actionText = createElement(
     'span',
