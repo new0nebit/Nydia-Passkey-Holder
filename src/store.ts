@@ -235,13 +235,13 @@ export async function getSettings(): Promise<RenterdSettings | null> {
 
 // Stored Credential Management
 export async function saveCredential(credential: StoredCredential): Promise<void> {
-  const enc = await encryptCredential(credential);
+  const encryptedRecord = await encryptCredential(credential);
   const db = await openDB();
   await new Promise<void>((resolve) => {
     db
       .transaction(STORE_NAME, 'readwrite')
       .objectStore(STORE_NAME)
-      .put(enc).onsuccess = () => resolve();
+      .put(encryptedRecord).onsuccess = () => resolve();
   });
 }
 
@@ -481,6 +481,29 @@ export async function handleMessageInBackground(message: BackgroundMessage): Pro
         await updateCredentialCounter(message.credentialId);
         return { status: 'ok' };
 
+      case 'getAllCredentialsMetadata':
+        return getAllCredentialsMetadata();
+
+      case 'getSettings':
+        return getSettings();
+
+      case 'saveSettings':
+        if (!message.settings) return { error: 'Missing settings' };
+        await saveSettings(message.settings as RenterdSettings);
+        return { status: 'ok' };
+
+      case 'deleteCredential': {
+        if (typeof message.uniqueId !== 'string') return { error: 'Invalid uniqueId' };
+        const db = await openDB();
+        await new Promise<void>((resolve, reject) => {
+          const transaction = db.transaction(STORE_NAME, 'readwrite');
+          transaction.objectStore(STORE_NAME).delete(message.uniqueId!);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error ?? new Error('Failed to delete credential'));
+        });
+        return { status: 'ok' };
+      }
+
       default:
         throw new Error(`Unknown message type: ${message.type}`);
     }
@@ -504,4 +527,3 @@ export async function findCredential(
   if ('error' in response) throw new Error(response.error);
   return response;
 }
-

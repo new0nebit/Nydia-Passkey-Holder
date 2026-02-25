@@ -9,7 +9,6 @@ import {
   showSettingsForm,
   validateSettings,
 } from './settings';
-import { getAllCredentialsMetadata, openDB, STORE_NAME } from './store';
 import { CredentialMetadata } from './types';
 
 type NotificationType = 'success' | 'error' | 'info' | 'warning';
@@ -98,8 +97,8 @@ function createButton(
   appendSvgTo(button, iconSvg);
   button.appendChild(create('span', [], label));
 
-  button.addEventListener('click', (e) => {
-    e.stopPropagation();
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
     void Promise.resolve(handler(button)).catch(() => {});
   });
 
@@ -287,7 +286,7 @@ export class Menu {
       if (!passkeyList) return;
 
       const [credentialsRaw, settings] = await Promise.all([
-        getAllCredentialsMetadata().catch(() => []),
+        browser.runtime.sendMessage({ type: 'getAllCredentialsMetadata' }).catch(() => []),
         getSettings(),
       ]);
 
@@ -345,7 +344,7 @@ export class Menu {
   }
 
   private buildHeader(listRoot: HTMLElement): void {
-    this.cleanup.forEach((fn) => fn());
+    this.cleanup.forEach((cleanup) => cleanup());
     this.cleanup = [];
 
     const header = create('div', ['header-container']);
@@ -400,13 +399,13 @@ export class Menu {
       menu.classList.toggle('hidden');
     };
 
-    burger.addEventListener('click', (e) => {
-      e.stopPropagation();
+    burger.addEventListener('click', (event) => {
+      event.stopPropagation();
       toggle();
     });
 
-    const handleOutsideClick = (e: Event) => {
-      if (!wrap.contains(e.target as Node) && !menu.classList.contains('hidden')) {
+    const handleOutsideClick = (event: Event) => {
+      if (!wrap.contains(event.target as Node) && !menu.classList.contains('hidden')) {
         toggle();
       }
     };
@@ -500,13 +499,13 @@ export class Menu {
       return;
 
     try {
-      const db = await openDB();
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).delete(uniqueId).onsuccess = () => {
-        notify('success', 'Deleted', 'Passkey deleted successfully.');
-        this.render();
-      };
-      tx.onerror = () => notify('error', 'Error', 'Failed to delete passkey.');
+      const response = (await browser.runtime.sendMessage({
+        type: 'deleteCredential',
+        uniqueId,
+      })) as { status?: string; error?: string };
+      if (response?.error) throw new Error(response.error);
+      notify('success', 'Deleted', 'Passkey deleted successfully.');
+      await this.render();
     } catch (error) {
       logError('[Menu] remove error', error);
       notify('error', 'Error', 'Failed to delete passkey.');
@@ -591,7 +590,7 @@ export class Menu {
   }
 
   private async uploadUnsynced(): Promise<SyncUploadResult> {
-    const all = await getAllCredentialsMetadata();
+    const all = (await browser.runtime.sendMessage({ type: 'getAllCredentialsMetadata' })) as CredentialMetadata[];
     const unsynced = all.filter((credential) => !credential.isSynced);
     if (!unsynced.length) return { uploadedCount: 0, failedCount: 0, error: false };
 
