@@ -3,6 +3,8 @@ import { logDebug, logError, logWarn } from './logger';
 import { uploadPasskeyDirect } from './sia';
 import {
   BackgroundMessage,
+  CredentialMetadata,
+  EncryptedEnvelope,
   EncryptedRecord,
   GetAssertionOptions,
   RenterdSettings,
@@ -62,89 +64,151 @@ export function openDB(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => setupStores(request.result);
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(request.error ?? new Error('Failed to open IndexedDB'));
   });
 }
 
-// masterKey
-let masterKey: CryptoKey | null = null;
+// rootKey (HKDF)
+let rootKey: CryptoKey | null = null;
 
-async function loadMasterKeyFromDB(): Promise<CryptoKey | null> {
-  if (masterKey) return masterKey;
+const HKDF_METADATA_INFO = new TextEncoder().encode('metadata:v1');
+const HKDF_SECRET_INFO = new TextEncoder().encode('secret:v1');
+
+async function loadRootKeyFromDB(): Promise<CryptoKey | null> {
+  if (rootKey) return rootKey;
 
   const db = await openDB();
-  const item = await new Promise<{ key?: CryptoKey } | undefined>((resolve) => {
+  const rootKeyEntry = await new Promise<{ key?: CryptoKey } | undefined>((resolve) => {
     db
       .transaction(SETTINGS_STORE, 'readonly')
       .objectStore(SETTINGS_STORE)
-      .get('ephemeralKey').onsuccess = (event) =>
+      .get('rootKey').onsuccess = (event) =>
         resolve((event.target as IDBRequest<{ key?: CryptoKey }>).result);
   });
 
-  if (item?.key) {
-    masterKey = item.key;
-    logDebug('[Store] masterKey loaded');
+  if (rootKeyEntry?.key) {
+    rootKey = rootKeyEntry.key;
+    logDebug('[Store] rootKey loaded');
   }
-  return masterKey;
+  return rootKey;
 }
 
-async function getMasterKey(): Promise<CryptoKey> {
-  const key = await loadMasterKeyFromDB();
+async function getRootKey(): Promise<CryptoKey> {
+  const key = await loadRootKeyFromDB();
   if (key) return key;
-  throw new Error('masterKeyMissing');
+  throw new Error('rootKeyMissing');
 }
 
-export async function getMasterKeyIfAvailable(): Promise<CryptoKey | null> {
-  return loadMasterKeyFromDB();
+export async function getRootKeyIfAvailable(): Promise<CryptoKey | null> {
+  return loadRootKeyFromDB();
 }
 
-// Background-only: stores masterKey in IndexedDB
-export async function setMasterKey(key: CryptoKey): Promise<void> {
+// Background-only: stores rootKey in IndexedDB
+export async function setRootKey(key: CryptoKey): Promise<void> {
   const db = await openDB();
   await new Promise<void>((resolve) => {
     db
       .transaction(SETTINGS_STORE, 'readwrite')
       .objectStore(SETTINGS_STORE)
-      .put({ id: 'ephemeralKey', key }).onsuccess = () => resolve();
+      .put({ id: 'rootKey', key }).onsuccess = () => resolve();
   });
-  masterKey = key;
-  logDebug('[Store] masterKey persisted');
+  rootKey = key;
+  logDebug('[Store] rootKey persisted');
+}
+
+// HKDF key derivation
+async function deriveAesKey(info: Uint8Array): Promise<CryptoKey> {
+  const root = await getRootKey();
+  return subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0) as BufferSource, info: info as BufferSource },
+    root,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+function deriveMetadataKey(): Promise<CryptoKey> {
+  return deriveAesKey(HKDF_METADATA_INFO);
+}
+
+function deriveSecretKey(): Promise<CryptoKey> {
+  return deriveAesKey(HKDF_SECRET_INFO);
 }
 
 // encrypt / decrypt helpers
-async function encryptCredential(credential: StoredCredential): Promise<EncryptedRecord> {
-  // Remove isSynced and uniqueId before encryption
-  const { isSynced, uniqueId, ...withoutSync } = credential;
-
-  const key = await getMasterKey();
+async function sealEnvelope(key: CryptoKey, payload: Record<string, unknown>): Promise<EncryptedEnvelope> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await subtle.encrypt(
     { name: 'AES-GCM', iv },
     key,
-    new TextEncoder().encode(JSON.stringify(withoutSync)),
+    new TextEncoder().encode(JSON.stringify(payload)),
   );
-
-  const record: EncryptedRecord = {
-    uniqueId,
+  return {
     iv: base64UrlEncode(iv),
     data: base64UrlEncode(new Uint8Array(ciphertext)),
-    isSynced: isSynced,
   };
-  return record;
 }
 
-async function decryptCredential(record: EncryptedRecord): Promise<StoredCredential> {
-  const key = await getMasterKey();
-  const iv = new Uint8Array(base64UrlDecode(record.iv));
+async function openEnvelope<T>(key: CryptoKey, envelope: EncryptedEnvelope): Promise<T> {
+  const iv = new Uint8Array(base64UrlDecode(envelope.iv));
   const plaintext = await subtle.decrypt(
     { name: 'AES-GCM', iv },
     key,
-    new Uint8Array(base64UrlDecode(record.data)),
+    new Uint8Array(base64UrlDecode(envelope.data)),
   );
-  const storedCredential: StoredCredential = JSON.parse(new TextDecoder().decode(plaintext));
-  storedCredential.uniqueId = record.uniqueId;
-  storedCredential.isSynced = record.isSynced ?? false;
-  return storedCredential;
+  return JSON.parse(new TextDecoder().decode(plaintext)) as T;
+}
+
+async function encryptCredential(credential: StoredCredential): Promise<EncryptedRecord> {
+  const [metadataKey, secretKey] = await Promise.all([deriveMetadataKey(), deriveSecretKey()]);
+
+  const [metadata, secret] = await Promise.all([
+    sealEnvelope(metadataKey, {
+      rpId: credential.rpId,
+      userName: credential.userName,
+      creationTime: credential.creationTime,
+    }),
+    sealEnvelope(secretKey, {
+      credentialId: credential.credentialId,
+      userHandle: credential.userHandle,
+      publicKeyAlgorithm: credential.publicKeyAlgorithm,
+      privateKey: credential.privateKey,
+      counter: credential.counter,
+    }),
+  ]);
+
+  return {
+    uniqueId: credential.uniqueId,
+    metadata,
+    secret,
+    isSynced: credential.isSynced,
+  };
+}
+
+type MetadataPayload = { rpId: string; userName?: string; creationTime: number };
+type SecretPayload = {
+  credentialId: string;
+  userHandle: string;
+  publicKeyAlgorithm: number;
+  counter: number;
+  privateKey: string;
+};
+
+async function decryptCredential(record: EncryptedRecord): Promise<StoredCredential> {
+  const [metadataKey, secretKey] = await Promise.all([deriveMetadataKey(), deriveSecretKey()]);
+
+  const [metadataPayload, secretPayload] = await Promise.all([
+    openEnvelope<MetadataPayload>(metadataKey, record.metadata),
+    openEnvelope<SecretPayload>(secretKey, record.secret),
+  ]);
+
+  return {
+    uniqueId: record.uniqueId,
+    isSynced: record.isSynced ?? false,
+    ...metadataPayload,
+    ...secretPayload,
+  };
 }
 
 // Settings Management
@@ -170,7 +234,7 @@ export async function getSettings(): Promise<RenterdSettings | null> {
 }
 
 // Stored Credential Management
-export async function saveStoredCredential(credential: StoredCredential): Promise<void> {
+export async function saveCredential(credential: StoredCredential): Promise<void> {
   const enc = await encryptCredential(credential);
   const db = await openDB();
   await new Promise<void>((resolve) => {
@@ -181,9 +245,9 @@ export async function saveStoredCredential(credential: StoredCredential): Promis
   });
 }
 
-export async function getAllStoredCredentialsFromDB(): Promise<StoredCredential[]> {
+export async function getAllStoredCredentials(): Promise<StoredCredential[]> {
   const db = await openDB();
-  const encList: EncryptedRecord[] = await new Promise((resolve) => {
+  const encryptedRecords: EncryptedRecord[] = await new Promise((resolve) => {
     db
       .transaction(STORE_NAME, 'readonly')
       .objectStore(STORE_NAME)
@@ -191,25 +255,56 @@ export async function getAllStoredCredentialsFromDB(): Promise<StoredCredential[
         resolve((event.target as IDBRequest<EncryptedRecord[]>).result ?? []);
   });
 
-  const out: StoredCredential[] = [];
-  for (const encryptedRecord of encList) {
+  const credentials: StoredCredential[] = [];
+  for (const encryptedRecord of encryptedRecords) {
     try {
-      out.push(await decryptCredential(encryptedRecord));
+      credentials.push(await decryptCredential(encryptedRecord));
     } catch (error) {
       logError('[Store] decrypt error', error);
     }
   }
-  return out;
+  return credentials;
 }
 
-async function getCredentialById(
+export async function getAllCredentialsMetadata(): Promise<CredentialMetadata[]> {
+  const db = await openDB();
+  const encryptedRecords: EncryptedRecord[] = await new Promise((resolve) => {
+    db
+      .transaction(STORE_NAME, 'readonly')
+      .objectStore(STORE_NAME)
+      .getAll().onsuccess = (event) =>
+        resolve((event.target as IDBRequest<EncryptedRecord[]>).result ?? []);
+  });
+
+  if (encryptedRecords.length === 0) return [];
+
+  const metadataKey = await deriveMetadataKey();
+  const metadataList: CredentialMetadata[] = [];
+  for (const record of encryptedRecords) {
+    try {
+      const metadataPayload = await openEnvelope<MetadataPayload>(metadataKey, record.metadata);
+      metadataList.push({
+        uniqueId: record.uniqueId,
+        rpId: metadataPayload.rpId,
+        userName: metadataPayload.userName,
+        creationTime: metadataPayload.creationTime,
+        isSynced: record.isSynced ?? false,
+      });
+    } catch (error) {
+      logError('[Store] decrypt metadata error', error);
+    }
+  }
+  return metadataList;
+}
+
+async function getStoredCredentialByCredentialId(
   credentialId: string,
 ): Promise<StoredCredential | undefined> {
-  return (await getAllStoredCredentialsFromDB()).find((credential) => credential.credentialId === credentialId);
+  return (await getAllStoredCredentials()).find((credential) => credential.credentialId === credentialId);
 }
 
 // Get encrypted credential directly from DB
-export async function getEncryptedCredentialByUniqueId(
+export async function getEncryptedRecord(
   uniqueId: string,
 ): Promise<EncryptedRecord | null> {
   const db = await openDB();
@@ -223,7 +318,7 @@ export async function getEncryptedCredentialByUniqueId(
 }
 
 // Save encrypted credential directly to DB
-export async function saveEncryptedCredential(record: EncryptedRecord): Promise<void> {
+export async function saveEncryptedRecord(record: EncryptedRecord): Promise<void> {
   const db = await openDB();
   await new Promise<void>((resolve) => {
     db
@@ -234,23 +329,23 @@ export async function saveEncryptedCredential(record: EncryptedRecord): Promise<
 }
 
 // counter + Sia sync
-export async function updateCredentialCounter(credentialId: string): Promise<void> {
-  const prev = counterLocks.get(credentialId) ?? Promise.resolve();
+export function updateCredentialCounter(credentialId: string): Promise<void> {
+  const pendingLock = counterLocks.get(credentialId) ?? Promise.resolve();
 
-  const next = prev.then(async () => {
-    const credential = await getCredentialById(credentialId);
+  const lockPromise = pendingLock.then(async () => {
+    const credential = await getStoredCredentialByCredentialId(credentialId);
     if (!credential) throw new Error('Credential not found');
 
     credential.counter++;
     credential.isSynced = false;
 
     const encUnsynced = await encryptCredential(credential);
-    await saveEncryptedCredential(encUnsynced);
+    await saveEncryptedRecord(encUnsynced);
 
     uploadPasskeyDirect(encUnsynced).then(async (result) => {
       if (result.success) {
         encUnsynced.isSynced = true;
-        await saveEncryptedCredential(encUnsynced);
+        await saveEncryptedRecord(encUnsynced);
       } else {
         logWarn('[Store] counter sync Sia', result.error);
       }
@@ -259,14 +354,15 @@ export async function updateCredentialCounter(credentialId: string): Promise<voi
     });
   });
 
-  counterLocks.set(credentialId, next);  
-  next.finally(() => counterLocks.delete(credentialId));
+  counterLocks.set(credentialId, lockPromise);
+  void lockPromise.finally(() => counterLocks.delete(credentialId));
+  return lockPromise;
 }
 
 // Utility Functions
 export async function createUniqueId(rpId: string, credentialId: string): Promise<string> {
-  const data = new TextEncoder().encode(`${rpId}:${credentialId}`);
-  const hash = await subtle.digest('SHA-256', data);
+  const hashInput = new TextEncoder().encode(`${rpId}:${credentialId}`);
+  const hash = await subtle.digest('SHA-256', hashInput);
   return base64UrlEncode(new Uint8Array(hash));
 }
 
@@ -295,13 +391,13 @@ export async function savePrivateKey(
     isSynced: false,
   };
 
-  await saveStoredCredential(stored);
+  await saveCredential(stored);
 }
 
 export async function loadPrivateKey(
   credentialId: string,
 ): Promise<[CryptoKey, SigningAlgorithm, number]> {
-  const credential = await getCredentialById(credentialId);
+  const credential = await getStoredCredentialByCredentialId(credentialId);
   if (!credential) throw new Error('Credential not found');
 
   const pkcs8 = new Uint8Array(base64UrlDecode(credential.privateKey));
@@ -334,22 +430,22 @@ export async function loadPrivateKey(
 export async function handleMessageInBackground(message: BackgroundMessage): Promise<unknown> {
   try {
     switch (message.type) {
-      case 'saveStoredCredential':
-        if (!message.storedCredential) return { error: 'Missing storedCredential' };
-        await saveStoredCredential(message.storedCredential as StoredCredential);
+      case 'saveCredential':
+        if (!message.credential) return { error: 'Missing credential' };
+        await saveCredential(message.credential as StoredCredential);
         return { status: 'ok' };
 
       case 'getStoredCredential':
         if (typeof message.credentialId !== 'string') return { error: 'Invalid credentialId' };
         return (
-          (await getCredentialById(message.credentialId)) ?? { error: 'Not found' }
+          (await getStoredCredentialByCredentialId(message.credentialId)) ?? { error: 'Not found' }
         );
 
       case 'getAllStoredCredentials':
-        return getAllStoredCredentialsFromDB();
+        return getAllStoredCredentials();
 
       case 'findCredential': {
-        const list = await getAllStoredCredentialsFromDB();
+        const list = await getAllStoredCredentials();
         const opts = message.options;
 
         if (!opts || typeof opts !== 'object' || !('publicKey' in opts) || !opts.publicKey) {
@@ -388,9 +484,9 @@ export async function handleMessageInBackground(message: BackgroundMessage): Pro
       default:
         throw new Error(`Unknown message type: ${message.type}`);
     }
-  } catch (e: unknown) {
-    logError('[Store] background handler error', e);
-    const errorMessage = e instanceof Error ? e.message : String(e);
+  } catch (error: unknown) {
+    logError('[Store] background handler error', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     return { error: errorMessage };
   }
 }
@@ -409,13 +505,3 @@ export async function findCredential(
   return response;
 }
 
-export async function getAllStoredCredentials(): Promise<StoredCredential[]> {
-  const response = await handleMessageInBackground({
-    type: 'getAllStoredCredentials',
-  }) as StoredCredential[] | { error: string };
-  if (!Array.isArray(response)) {
-    if ('error' in response) throw new Error(response.error);
-    return [];
-  }
-  return response;
-}
