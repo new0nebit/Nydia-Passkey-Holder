@@ -1,58 +1,24 @@
 import browser from 'browser-api';
 
 import { RenterdSettings } from './types';
-import { icons } from './ui/icons/menu';
 
-// Export notification interface so menu.ts can import it
 export interface NotificationDisplayer {
   showNotification(type: NotificationType, title: string, message: string): void;
 }
 
-// Type for notifications
 type NotificationType = 'success' | 'error' | 'info' | 'warning';
 
-// Initial notification implementation that will be replaced by
-// the real implementation from menu.ts when the Menu class is initialized
-let notificationDisplayer: NotificationDisplayer = {
-  showNotification(type: NotificationType, title: string, message: string) {
-    const notification = document.createElement('div');
-    notification.className = `alert alert-${type}`;
+let notificationDisplayer: NotificationDisplayer | null = null;
 
-    const iconSvg =
-      type === 'success'
-        ? icons.check
-        : type === 'error'
-          ? icons.alert
-          : type === 'warning'
-            ? icons.warning
-            : icons.info;
-
-    notification.innerHTML = `
-      ${iconSvg}
-      <div class="alert-content">
-        <h5 class="alert-title">${title}</h5>
-        <div class="alert-description">
-          ${message}
-        </div>
-      </div>
-    `;
-
-    const root = document.getElementById('root');
-    if (root) {
-      root.insertBefore(notification, root.firstChild);
-    }
-
-    setTimeout(() => {
-      if (notification.parentNode) {
-        notification.parentNode.removeChild(notification);
-      }
-    }, 3000);
-  },
-};
-
-// Set notification handler
-export function setNotificationDisplayer(displayer: NotificationDisplayer) {
+export function setNotificationDisplayer(displayer: NotificationDisplayer): void {
   notificationDisplayer = displayer;
+}
+
+function notify(type: NotificationType, title: string, message: string): void {
+  if (!notificationDisplayer) {
+    throw new Error('notificationDisplayer is not set');
+  }
+  notificationDisplayer.showNotification(type, title, message);
 }
 
 // Get settings
@@ -216,11 +182,7 @@ async function detectProtocol(settings: RenterdSettings): Promise<'http' | 'http
 async function testConnection(form: HTMLFormElement) {
   const settings = getSettingsFromForm(form);
   if (!validateSettings(settings)) {
-    notificationDisplayer.showNotification(
-      'error',
-      'Error!',
-      'Please fill out all fields correctly.',
-    );
+    notify('error', 'Error!', 'Please fill out all fields correctly.');
     return;
   }
 
@@ -233,20 +195,12 @@ async function testConnection(form: HTMLFormElement) {
 
     await detectProtocol(settings);
 
-    notificationDisplayer.showNotification('success', 'Success!', 'Connection successful.');
+    notify('success', 'Success!', 'Connection successful.');
   } catch (error: unknown) {
     if (error instanceof DOMException && error.name === 'AbortError') {
-      notificationDisplayer.showNotification(
-        'error',
-        'Error!',
-        'Connection timed out after 2 seconds.',
-      );
+      notify('error', 'Error!', 'Connection timed out after 2 seconds.');
     } else {
-      notificationDisplayer.showNotification(
-        'error',
-        'Error!',
-        'Failed to connect to renterd server.',
-      );
+      notify('error', 'Error!', 'Failed to connect to renterd server.');
     }
   } finally {
     testButton.textContent = originalText;
@@ -269,11 +223,7 @@ function getSettingsFromForm(form: HTMLFormElement): RenterdSettings {
 async function saveSettingsFromForm(form: HTMLFormElement) {
   const settings = getSettingsFromForm(form);
   if (!validateSettings(settings)) {
-    notificationDisplayer.showNotification(
-      'error',
-      'Error!',
-      'Please fill out all fields correctly.',
-    );
+    notify('error', 'Error!', 'Please fill out all fields correctly.');
     return;
   }
 
@@ -289,11 +239,7 @@ async function saveSettingsFromForm(form: HTMLFormElement) {
       settings.serverProtocol = await detectProtocol(settings);
     } catch {
       settings.serverProtocol = existingSettings?.serverProtocol;
-      notificationDisplayer.showNotification(
-        'warning',
-        'Warning',
-        "Saved, but connection couldn't be checked.",
-      );
+      notify('warning', 'Warning', "Saved, but connection couldn't be checked.");
     }
   } else {
     settings.serverProtocol = existingSettings?.serverProtocol;
@@ -301,5 +247,5 @@ async function saveSettingsFromForm(form: HTMLFormElement) {
 
   const result = (await browser.runtime.sendMessage({ type: 'saveSettings', settings })) as { status?: string; error?: string };
   if (result?.error) throw new Error(result.error);
-  notificationDisplayer.showNotification('success', 'Success!', 'Settings saved successfully.');
+  notify('success', 'Success!', 'Settings saved successfully.');
 }
