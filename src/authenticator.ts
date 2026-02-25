@@ -5,7 +5,7 @@ import {
   createUniqueId,
   findCredential,
   getAllStoredCredentials,
-  getEncryptedCredentialByUniqueId,
+  getEncryptedRecord,
   loadPrivateKey,
   savePrivateKey,
   updateCredentialCounter,
@@ -187,7 +187,7 @@ export async function createCredential(
     for (const descriptor of excludeList) {
       const descriptorId = base64UrlEncode(toArrayBuffer(descriptor.id as ArrayBuffer));
       const uniqueId = await createUniqueId(rpId, descriptorId);
-      if (await getEncryptedCredentialByUniqueId(uniqueId)) {
+      if (await getEncryptedRecord(uniqueId)) {
         logDebug('[Authenticator] excludeCredentials match found - aborting creation', { rpId, credentialId: descriptorId, uniqueId });
         throw new DOMException('A passkey for this account already exists.', 'InvalidStateError');
       }

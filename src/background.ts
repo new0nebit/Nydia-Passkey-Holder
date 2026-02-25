@@ -12,12 +12,12 @@ import {
   uploadPasskeyDirect,
 } from './sia';
 import {
-  getEncryptedCredentialByUniqueId,
+  getEncryptedRecord,
   getSettings,
   handleMessageInBackground,
-  saveEncryptedCredential,
-  getMasterKeyIfAvailable,
-  setMasterKey,
+  saveEncryptedRecord,
+  getRootKeyIfAvailable,
+  setRootKey,
 } from './store';
 import {
   BackgroundMessage,
@@ -138,8 +138,17 @@ function toGetAssertionOptions(options: SerializedRequestOptions): GetAssertionO
 }
 
 // Checks if the given object is a valid EncryptedRecord
-function isValidEncryptedRecord(x: unknown): x is EncryptedRecord {
-  return Boolean(x && typeof x === 'object' && 'uniqueId' in x && 'iv' in x && 'data' in x);
+function isValidEncryptedRecord(value: unknown): value is EncryptedRecord {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      'uniqueId' in value &&
+      typeof (value as { uniqueId: unknown }).uniqueId === 'string' &&
+      'metadata' in value &&
+      'secret' in value &&
+      'isSynced' in value &&
+      typeof (value as { isSynced: unknown }).isSynced === 'boolean'
+  );
 }
 
 // Type guard for BackgroundMessage
@@ -155,7 +164,7 @@ function isBackgroundMessage(msg: unknown): msg is BackgroundMessage {
 // Handles the upload of a single passkey to renterd
 async function handleUploadToSia(uniqueId: string) {
   // Get encrypted record directly from DB
-  const encryptedRecord = await getEncryptedCredentialByUniqueId(uniqueId);
+  const encryptedRecord = await getEncryptedRecord(uniqueId);
   if (!encryptedRecord) {
     return { success: false, error: 'Passkey not found' };
   }
@@ -166,7 +175,7 @@ async function handleUploadToSia(uniqueId: string) {
   // If upload successful, update isSynced flag
   if (result.success) {
     encryptedRecord.isSynced = true;
-    await saveEncryptedCredential(encryptedRecord);
+    await saveEncryptedRecord(encryptedRecord);
   }
 
   return result;
@@ -210,7 +219,7 @@ async function handleSyncFromSia() {
       }
 
       // Save encrypted record directly to DB
-      await saveEncryptedCredential(encryptedRecord);
+      await saveEncryptedRecord(encryptedRecord);
       synced++;
     } catch (error: unknown) {
       logError(`[Background] Sync failed for ${fileName}`, error);
@@ -225,12 +234,12 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
   try {
     switch (msg.type) {
       case 'createCredential':
-        if (!(await getMasterKeyIfAvailable())) return { error: 'masterKeyMissing' };
+        if (!(await getRootKeyIfAvailable())) return { error: 'rootKeyMissing' };
         if (!msg.options?.publicKey) return { error: 'Invalid options: publicKey is required' };
         return await createCredential(toCreationOptions(msg.options as SerializedCreationOptions));
 
       case 'handleGetAssertion':
-        if (!(await getMasterKeyIfAvailable())) return { error: 'masterKeyMissing' };
+        if (!(await getRootKeyIfAvailable())) return { error: 'rootKeyMissing' };
         if (!msg.options?.publicKey) return { error: 'Invalid options: publicKey is required' };
         return handleGetAssertion(
           toGetAssertionOptions(msg.options as SerializedRequestOptions),
@@ -239,7 +248,7 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
 
       case 'getAvailableCredentials':
         if (!msg.rpId) return { error: 'Missing rpId' };
-        return getAvailableCredentials(msg.rpId);
+        return await getAvailableCredentials(msg.rpId);
 
       // Use uniqueId
       case 'uploadToSia':
@@ -291,20 +300,18 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
           const wrappedKeyBytes = new Uint8Array(msg.wrappedKey);
 
           // Unwrap the key using our private key
-          const unwrappedKey = await crypto.subtle.unwrapKey(
+          const rootKey = await crypto.subtle.unwrapKey(
             'raw',
             wrappedKeyBytes,
             wrappingKeyPair.privateKey,
-            {
-              name: 'RSA-OAEP',
-            },
-            { name: 'AES-GCM', length: 256 },
+            { name: 'RSA-OAEP' },
+            { name: 'HKDF' },
             false, // not extractable
-            ['encrypt', 'decrypt'],
+            ['deriveKey'],
           );
 
-          // Persist the unwrapped key
-          await setMasterKey(unwrappedKey);
+          // Persist the root key
+          await setRootKey(rootKey);
 
           // Clean up RSA keys after successful storage
           wrappingKeyPair = null;
@@ -313,7 +320,7 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
           secureCleanup(msg.wrappedKey);
           secureCleanup(wrappedKeyBytes);
 
-          logDebug('[Background] Master key securely stored and RSA keys cleaned up');
+          logDebug('[Background] Root key securely stored and RSA keys cleaned up');
           return { status: 'ok' };
         } catch (error: unknown) {
           logError('[Background] Failed to unwrap and store key', error);
@@ -363,5 +370,5 @@ browser.runtime.onMessage.addListener((message: unknown) => {
   return router(message);
 });
 
-getMasterKeyIfAvailable().catch(logError);
+getRootKeyIfAvailable().catch(logError);
 logInfo('[Background] ready');

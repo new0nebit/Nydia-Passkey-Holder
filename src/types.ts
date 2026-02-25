@@ -87,10 +87,23 @@ export interface RenterdSettings {
   serverProtocol?: 'http' | 'https';
 }
 
-export interface EncryptedRecord {
-  uniqueId: string;
+export interface EncryptedEnvelope {
   iv: string;
   data: string;
+}
+
+export interface EncryptedRecord {
+  uniqueId: string;
+  metadata: EncryptedEnvelope;
+  secret: EncryptedEnvelope;
+  isSynced: boolean;
+}
+
+export interface CredentialMetadata {
+  uniqueId: string;
+  rpId: string;
+  userName?: string;
+  creationTime: number;
   isSynced: boolean;
 }
 
