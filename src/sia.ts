@@ -1,11 +1,37 @@
 import { logDebug, logError } from './logger';
 import { getSettings } from './store';
-import { EncryptedRecord, RenterdSettings } from './types';
+import { EncryptedEnvelope, EncryptedRecord, RenterdSettings } from './types';
 
 const PASSKEY_EXTENSION = '.passkey';
 const MIME_OCTET_STREAM = 'application/octet-stream';
 const QUERY_BUCKET = 'bucket';
 const QUERY_MIMETYPE = 'mimetype';
+
+function isValidEnvelope(value: unknown): value is EncryptedEnvelope {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      'iv' in value &&
+      typeof (value as { iv: unknown }).iv === 'string' &&
+      'data' in value &&
+      typeof (value as { data: unknown }).data === 'string',
+  );
+}
+
+function isValidEncryptedRecord(value: unknown): value is EncryptedRecord {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      'uniqueId' in value &&
+      typeof (value as { uniqueId: unknown }).uniqueId === 'string' &&
+      'metadata' in value &&
+      isValidEnvelope((value as { metadata: unknown }).metadata) &&
+      'secret' in value &&
+      isValidEnvelope((value as { secret: unknown }).secret) &&
+      'isSynced' in value &&
+      typeof (value as { isSynced: unknown }).isSynced === 'boolean',
+  );
+}
 
 // Build base URL using saved protocol (detected during settings save).
 function buildBaseURL(settings: RenterdSettings): string {
@@ -126,15 +152,20 @@ export async function downloadPasskeyFromRenterd(
     method: 'GET',
     headers: buildHeaders(settings),
   });
-  const data = await response.json();
-  logDebug('[Sia] Downloaded encrypted passkey data', { uniqueId: data.uniqueId });
+  const record = (await response.json()) as unknown;
+  logDebug('[Sia] Downloaded encrypted passkey data', {
+    uniqueId:
+      record && typeof record === 'object' && 'uniqueId' in record
+        ? (record as { uniqueId: unknown }).uniqueId
+        : undefined,
+  });
 
-  // Validate that it's a proper EncryptedRecord.
-  if (!data.uniqueId || !data.iv || !data.data) {
+  // Validate encrypted passkey shape.
+  if (!isValidEncryptedRecord(record)) {
     throw new Error('Invalid encrypted record format');
   }
 
-  return data as EncryptedRecord;
+  return record;
 }
 
 // Upload an encrypted passkey record to renterd.
