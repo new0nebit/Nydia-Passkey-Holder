@@ -6,7 +6,6 @@ import {
   findCredential,
   getAllStoredCredentials,
   getEncryptedRecord,
-  loadPrivateKey,
   savePrivateKey,
   updateCredentialCounter,
 } from './store';
@@ -126,6 +125,41 @@ function chooseAlgorithm(
     }
   }
   throw new Error('No supported algorithm found');
+}
+
+// Load private key from stored credential and prepare it for signing
+async function loadPrivateKey(
+  credentialId: string,
+): Promise<[CryptoKey, SigningAlgorithm, number]> {
+  const credential = (await getAllStoredCredentials()).find(
+    (c) => c.credentialId === credentialId,
+  );
+  if (!credential) throw new Error('Credential not found');
+
+  const pkcs8 = new Uint8Array(base64UrlDecode(credential.privateKey));
+
+  let algorithmParams: EcKeyImportParams | RsaHashedImportParams | Algorithm;
+  let signingAlgorithm: SigningAlgorithm;
+
+  switch (credential.publicKeyAlgorithm) {
+    case -7:
+      algorithmParams = { name: 'ECDSA', namedCurve: 'P-256' };
+      signingAlgorithm = new ES256();
+      break;
+    case -257:
+      algorithmParams = { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' };
+      signingAlgorithm = new RS256();
+      break;
+    case -8:
+      algorithmParams = { name: 'Ed25519' };
+      signingAlgorithm = new Ed25519();
+      break;
+    default:
+      throw new Error('Unsupported algorithm');
+  }
+
+  const privateKey = await subtle.importKey('pkcs8', pkcs8, algorithmParams, false, ['sign']);
+  return [privateKey, signingAlgorithm, credential.counter];
 }
 
 // Convert buffer to hexadecimal string
