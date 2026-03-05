@@ -244,6 +244,8 @@
   margin-top: 0.5rem;
   font-size: 0.875rem;
   color: #ef4444;
+  white-space: pre-line;
+  text-align: center;
 }
 
 /* ---------- Utilities ---------- */

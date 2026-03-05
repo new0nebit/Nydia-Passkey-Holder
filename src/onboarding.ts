@@ -3,11 +3,12 @@ import browser from 'browser-api';
 import './ui/styles/onboarding.css';
 import { logError } from './logger';
 
+type DeriveResult = { ok: true; key: CryptoKey } | { ok: false; message: string };
+
 export class OnboardingController {
   private step = 0;
   private container: HTMLElement;
   private seedPhrase = '';
-  private inputSeedPhrase = '';
   private isRecovery = false;
   private derivedKey: CryptoKey | null = null;
 
@@ -15,7 +16,7 @@ export class OnboardingController {
     this.container = root;
     this.render();
   }
-  
+
   private render(): void {
     const screen = div('onboarding-container');
     const content = div('content-wrapper');
@@ -33,11 +34,11 @@ export class OnboardingController {
         } else {
           if (!this.seedPhrase) {
             void this.generateSeedPhrase()
-              .then((s) => {
-                this.seedPhrase = s;
+              .then((seedPhrase) => {
+                this.seedPhrase = seedPhrase;
                 this.render();
               })
-              .catch((e) => logError('[Onboarding] seed gen error', e));
+              .catch((error) => logError('[Onboarding] seed gen error', error));
             break;
           }
           content.append(this.viewShowSeed());
@@ -70,7 +71,7 @@ export class OnboardingController {
     const wrap = div('flex-col');
     wrap.append(
       span('Choose an Option', 'title'),
-      span('Generate a new seed phrase or restore from an existing one', 'subtitle'),
+      span('Generate a new seed phrase or restore from an existing one.', 'subtitle'),
       button('Generate Seed', 'btn', () => {
         this.isRecovery = false;
         this.seedPhrase = '';
@@ -94,9 +95,9 @@ export class OnboardingController {
     );
 
     const grid = div('seed-grid');
-    this.seedPhrase.split(' ').forEach((w, i) => {
+    this.seedPhrase.split(' ').forEach((word, index) => {
       const cell = div('seed-word');
-      cell.append(span(`${i + 1}.`, 'word-number'), span(w, 'word'));
+      cell.append(span(`${index + 1}.`, 'word-number'), span(word, 'word'));
       grid.append(cell);
     });
 
@@ -114,10 +115,10 @@ export class OnboardingController {
     next.disabled = true;
     checkbox.onchange = () => (next.disabled = !checkbox.checked);
 
-    const cbWrap = div('checkbox-wrapper');
-    cbWrap.append(checkbox, label);
+    const checkboxWrapper = div('checkbox-wrapper');
+    checkboxWrapper.append(checkbox, label);
 
-    wrap.append(grid, cbWrap, next);
+    wrap.append(grid, checkboxWrapper, div('error-message hidden'), next);
     return wrap;
   }
 
@@ -125,19 +126,18 @@ export class OnboardingController {
     const wrap = div('flex-col');
     wrap.append(
       span('Enter Your Recovery Phrase', 'title'),
-      span('Enter the 12 words separated by spaces', 'subtitle'),
+      span('Enter your 12-word recovery phrase in lowercase, separated by spaces.', 'subtitle'),
     );
 
     const textarea = document.createElement('textarea');
     textarea.className = 'seed-input';
-    textarea.oninput = (e) => (this.inputSeedPhrase = (e.target as HTMLTextAreaElement).value);
 
-    const err = div('error-message hidden');
+    const errorMessage = div('error-message hidden');
 
     wrap.append(
       textarea,
-      err,
-      button('Verify', 'btn', () => void this.verifySeed(err)),
+      errorMessage,
+      button('Verify', 'btn', () => void this.verifySeed(textarea.value)),
       button('Back', 'btn-back', () => {
         this.step = 1;
         this.render();
@@ -161,10 +161,16 @@ export class OnboardingController {
         }),
       );
     } else {
+      const setupSubtitle = span(
+        'Setup complete!\nYou can now start using Nydia',
+        'subtitle',
+      );
+      setupSubtitle.style.whiteSpace = 'pre-line';
+
       wrap.append(
         this.svgCheck(),
         span('Done!', 'title'),
-        span('Setup complete! You can now start using Nydia.', 'subtitle'),
+        setupSubtitle,
         button('Start Using Nydia', 'btn', () => {
           this.purgeSensitiveData();
           window.location.reload();
@@ -179,14 +185,72 @@ export class OnboardingController {
     await this.deriveAndStoreKey(this.seedPhrase);
   }
 
-  private async verifySeed(errBox: HTMLElement): Promise<void> {
-    const res = await this.validateSeedPhrase(this.inputSeedPhrase);
-    if (!res.valid) {
-      errBox.textContent = res.errors.join('. ');
-      errBox.classList.remove('hidden');
-      return;
+  private async verifySeed(seedInput: string): Promise<void> {
+    await this.deriveAndStoreKey(seedInput.normalize('NFKD'));
+  }
+
+  private async deriveAndStoreKey(seed: string): Promise<void> {
+    try {
+      const result = await this.deriveKeyFromSeed(seed);
+      if (!result.ok) {
+        const errorMessage = document.querySelector('.error-message');
+        if (errorMessage) {
+          errorMessage.textContent = result.message;
+          errorMessage.classList.remove('hidden');
+        }
+        return;
+      }
+
+      this.derivedKey = result.key;
+
+      // Use secure transfer instead of raw export
+      await this.secureKeyTransfer(this.derivedKey);
+
+      // Mark onboarding as complete after successful key storage
+      localStorage.setItem('nydiaOnboardingDone', 'true');
+
+      this.purgeSensitiveData();
+
+      // Move to success step
+      this.step = 6;
+      this.render();
+    } catch (error) {
+      logError('[Onboarding] Failed to securely store key', error);
+
+      // Show error to user
+      const errorMessage = document.querySelector('.error-message');
+      if (errorMessage) {
+        errorMessage.textContent = 'Unable to complete setup.\nPlease try again.';
+        errorMessage.classList.remove('hidden');
+      }
+    } finally {
+      this.derivedKey = null;
     }
-    await this.deriveAndStoreKey(this.inputSeedPhrase.trim().toLowerCase());
+  }
+
+  private async deriveKeyFromSeed(seed: string): Promise<DeriveResult> {
+    const { entropy, errors } = await this.decodeSeedPhraseEntropy(seed);
+    if (!entropy || errors.length) {
+      return { ok: false, message: errors.join('. ') || 'Invalid seed phrase' };
+    }
+
+    let seedMaterial: Uint8Array | null = null;
+    try {
+      seedMaterial = new Uint8Array(await crypto.subtle.digest('SHA-256', entropy as BufferSource));
+      const key = await crypto.subtle.importKey(
+        'raw',
+        seedMaterial as BufferSource,
+        { name: 'AES-GCM', length: 256 },
+        true, // Must be extractable for wrapping
+        ['encrypt', 'decrypt'],
+      );
+      return { ok: true, key };
+    } finally {
+      this.secureCleanup(entropy);
+      if (seedMaterial) {
+        this.secureCleanup(seedMaterial);
+      }
+    }
   }
 
   // Secure key transfer using RSA-OAEP
@@ -201,7 +265,6 @@ export class OnboardingController {
       status?: string;
     };
 
-    let publicKeyBuffer: Uint8Array | null = null;
     let wrappedKeyBuffer: ArrayBuffer | null = null;
 
     try {
@@ -223,11 +286,10 @@ export class OnboardingController {
       }
 
       // Step 2: Import the public key
-      publicKeyBuffer = new Uint8Array(publicKeyResponse.publicKey);
-      const publicKeyData = publicKeyBuffer.slice();
+      const publicKeyData = new Uint8Array(publicKeyResponse.publicKey);
       const publicKey = await crypto.subtle.importKey(
         'spki',
-        publicKeyData,
+        publicKeyData as BufferSource,
         {
           name: 'RSA-OAEP',
           hash: 'SHA-256',
@@ -255,69 +317,18 @@ export class OnboardingController {
         throw new Error(storeResponse.error);
       }
     } finally {
-      // Clean up all sensitive data
+      // Clean up wrapped key
       if (wrappedKeyBuffer) {
         this.secureCleanup(new Uint8Array(wrappedKeyBuffer));
       }
     }
   }
 
-  // Secure cleanup of sensitive data
-  private secureCleanup(data: Uint8Array): void {
-    crypto.getRandomValues(data);
-    data.fill(0);
-  }
-
-  private async deriveAndStoreKey(seed: string): Promise<void> {
-    try {
-      // Derive key from seed
-      this.derivedKey = await this.deriveKeyFromSeed(seed);
-
-      // Use secure transfer instead of raw export
-      await this.secureKeyTransfer(this.derivedKey);
-
-      // Mark onboarding as complete after successful key storage
-      localStorage.setItem('nydiaOnboardingDone', 'true');
-
-      // Move to success step
-      this.step = 6;
-      this.render();
-    } catch (error) {
-      logError('[Onboarding] Failed to securely store key', error);
-
-      // Show error to user
-      const errorEl = document.querySelector('.error-message');
-      if (errorEl) {
-        errorEl.textContent = 'Failed to secure your key. Please try again.';
-        errorEl.classList.remove('hidden');
-      }
-    }
-  }
-
-  private async deriveKeyFromSeed(seed: string): Promise<CryptoKey> {
-    const enc = new TextEncoder();
-    const base = await crypto.subtle.importKey('raw', enc.encode(seed), 'PBKDF2', false, [
-      'deriveKey',
-    ]);
-    return crypto.subtle.deriveKey(
-      {
-        name: 'PBKDF2',
-        salt: enc.encode('NydiaSeedOnlySalt'),
-        iterations: 666_000,
-        hash: 'SHA-256',
-      },
-      base,
-      { name: 'AES-GCM', length: 256 },
-      true, // Must be extractable for wrapping
-      ['encrypt', 'decrypt'],
-    );
-  }
-
   private async generateSeedPhrase(): Promise<string> {
     const entropy = new Uint8Array(16);
     crypto.getRandomValues(entropy);
 
-    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', entropy));
+    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', entropy as BufferSource));
     const checksum4 = (hash[0] & 0xf0) >> 4;
 
     const hi = this.u64(entropy, 0);
@@ -337,31 +348,38 @@ export class OnboardingController {
       h >>= 11n;
     }
 
-    // Clean up sensitive data
     this.secureCleanup(entropy);
     this.secureCleanup(hash);
 
     return words.join(' ');
   }
 
-  private async validateSeedPhrase(
-    txt: string,
-  ): Promise<{ valid: boolean; errors: string[] }> {
-    const words = txt.trim().toLowerCase().split(/\s+/);
-    const errors: string[] = [];
-    if (words.length !== 12) {
-      errors.push(`Exactly 12 words required (got ${words.length})`);
-      return { valid: false, errors };
+  private async decodeSeedPhraseEntropy(
+    phrase: string,
+  ): Promise<{ entropy: Uint8Array | null; errors: string[] }> {
+    const trimmed = phrase.trim();
+    const lower = trimmed.toLowerCase();
+
+    if (trimmed !== lower) {
+      return { entropy: null, errors: ['Seed words must be lowercase.\nCheck your seed phrase and try again.'] };
     }
 
-    const bad = words.filter((w) => !bip39WordMap.has(w));
-    if (bad.length) {
-      errors.push(`Words not in dictionary: ${bad.join(', ')}`);
-      return { valid: false, errors };
+    const words = lower.split(/\s+/).filter(Boolean);
+    const errors: string[] = [];
+
+    if (words.length !== 12) {
+      errors.push(`Seed phrase must be exactly 12 words.\nYour seed phrase has ${words.length} words.`);
+      return { entropy: null, errors };
+    }
+
+    const invalidWords = words.filter((word) => !bip39WordMap.has(word));
+    if (invalidWords.length) {
+      errors.push(`Words not in dictionary: ${invalidWords.join(', ')}`);
+      return { entropy: null, errors };
     }
 
     // Reconstruct entropy from mnemonic words and verify the BIP39 checksum
-    const indices = words.map((w) => BigInt(bip39WordMap.get(w)!));
+    const indices = words.map((word) => BigInt(bip39WordMap.get(word)!));
 
     let h = 0n;
     let l = 0n;
@@ -369,6 +387,7 @@ export class OnboardingController {
       h = (h << 11n) | (l >> 53n);
       l = ((l << 11n) | indices[i]) & ((1n << 64n) - 1n);
     }
+
     const lastIdx = indices[11];
     const checksum = Number(lastIdx & 0xfn);
     const lastEntropy = lastIdx >> 4n;
@@ -385,17 +404,26 @@ export class OnboardingController {
       l >>= 8n;
     }
 
-    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', entropy));
+    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', entropy as BufferSource));
     const expected = (hash[0] & 0xf0) >> 4;
-
-    this.secureCleanup(entropy);
     this.secureCleanup(hash);
 
     if (checksum !== expected) {
-      errors.push('One or more words may be incorrect. Check your seed phrase and try again.');
+      this.secureCleanup(entropy);
+      errors.push('One or more words may be incorrect.\nCheck your seed phrase and try again.');
+      return { entropy: null, errors };
     }
 
-    return { valid: errors.length === 0, errors };
+    return { entropy, errors };
+  }
+
+  private purgeSensitiveData(): void {
+    this.derivedKey = null;
+    this.seedPhrase = '';
+  }
+
+  private secureCleanup(data: Uint8Array): void {
+    data.fill(0);
   }
 
   // misc helpers
@@ -407,29 +435,12 @@ export class OnboardingController {
     return wrap;
   }
 
-  private purgeSensitiveData(): void {
-    this.derivedKey = null;
-
-    // Secure cleanup of seed phrases
-    if (this.seedPhrase) {
-      const seedArray = new TextEncoder().encode(this.seedPhrase);
-      this.secureCleanup(seedArray);
-      this.seedPhrase = '';
-    }
-
-    if (this.inputSeedPhrase) {
-      const inputArray = new TextEncoder().encode(this.inputSeedPhrase);
-      this.secureCleanup(inputArray);
-      this.inputSeedPhrase = '';
-    }
-  }
-
-  private u64(buf: Uint8Array, off: number): bigint {
-    let x = 0n;
+  private u64(buffer: Uint8Array, offset: number): bigint {
+    let value = 0n;
     for (let i = 0; i < 8; i++) {
-      x = (x << 8n) | BigInt(buf[off + i]);
+      value = (value << 8n) | BigInt(buffer[offset + i]);
     }
-    return x;
+    return value;
   }
 }
 
@@ -484,5 +495,5 @@ const bip39EnglishWordList = [
 ];
 
 const bip39WordMap = new Map<string, number>(
-  bip39EnglishWordList.map((w, i) => [w, i]),
+  bip39EnglishWordList.map((word, index) => [word, index]),
 );
