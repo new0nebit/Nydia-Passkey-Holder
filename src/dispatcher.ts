@@ -83,7 +83,11 @@ class WebAuthnInterceptor {
       // If operation is 'get', fetch available credentials
       if (type === 'get') {
         accounts = await this.getAvailableCredentials(rpId);
-        logDebug('[Dispatcher] Available accounts', accounts);
+        logDebug('[Dispatcher] Available accounts', accounts.map((account) => ({
+          uniqueId: account.uniqueId,
+          username: account.username,
+          creationTime: new Date(account.creationTime ?? 0).toISOString().slice(0, 19).replace('T', ' ').replaceAll('-', '/'),
+        })));
 
         // If no passkeys available for this rpId, fallback to native browser
         if (!accounts || accounts.length === 0) {
@@ -105,10 +109,10 @@ class WebAuthnInterceptor {
       };
 
       // Display the custom popup for user interaction
-      const onAction = (selectedCredentialId?: string): Promise<unknown> => {
+      const onAction = (selectedUniqueId?: string): Promise<unknown> => {
         return type === 'create'
           ? this.handlePasskeySave(cleanedOptions as CreationOptions)
-          : this.handleGetAssertion(cleanedOptions as RequestOptions, selectedCredentialId);
+          : this.handleGetAssertion(cleanedOptions as RequestOptions, selectedUniqueId);
       };
 
       const result = await showPopup(payload, onAction);
@@ -128,7 +132,7 @@ class WebAuthnInterceptor {
       }
 
       // Process the response from the authenticator
-      const credential = await WebAuthnInterceptor.processAuthenticatorResponse(
+      const credential = WebAuthnInterceptor.processAuthenticatorResponse(
         result as Record<string, unknown>,
         type,
       );
@@ -215,9 +219,9 @@ class WebAuthnInterceptor {
       serializedOptions.publicKey = publicKey;
 
       // Serialize challenge
-      const pkChallenge = options.publicKey.challenge;
-      if (pkChallenge instanceof ArrayBuffer || pkChallenge instanceof Uint8Array) {
-        publicKey.challenge = base64UrlEncode(pkChallenge);
+      const challenge = options.publicKey.challenge;
+      if (challenge instanceof ArrayBuffer || challenge instanceof Uint8Array) {
+        publicKey.challenge = base64UrlEncode(challenge);
       }
 
       // Serialize user ID
@@ -281,11 +285,11 @@ class WebAuthnInterceptor {
   }
 
   // Handles the get assertion operation.
-  async handleGetAssertion(options: RequestOptions, selectedCredentialId?: string): Promise<unknown> {
+  async handleGetAssertion(options: RequestOptions, selectedUniqueId?: string): Promise<unknown> {
     try {
       logDebug('[Dispatcher] Handling get assertion operation', {
         options,
-        selectedCredentialId,
+        selectedUniqueId,
       });
 
       // Serialize options
@@ -295,7 +299,7 @@ class WebAuthnInterceptor {
       const response = (await browser.runtime.sendMessage({
         type: 'handleGetAssertion',
         options: serializedOptions,
-        selectedCredentialId,
+        selectedUniqueId,
       })) as { error?: string };
       if (response.error) {
         throw new Error(response.error);
@@ -327,10 +331,10 @@ class WebAuthnInterceptor {
   }
 
   // Processes the authenticator response and constructs a Credential object.
-  private static async processAuthenticatorResponse(
+  private static processAuthenticatorResponse(
     parsedResponse: Record<string, unknown>,
     type: WebAuthnOperationType,
-  ): Promise<PublicKeyCredential> {
+  ): PublicKeyCredential {
     logDebug('[Dispatcher] Processing authenticator response', parsedResponse);
 
     if (!parsedResponse.type || !parsedResponse.id || !parsedResponse.response) {
@@ -405,97 +409,99 @@ function initDispatcher(): void {
   const interceptor = new WebAuthnInterceptor();
 
   // Listens for messages from the injector.js script and handles them.
-  window.addEventListener('message', async (event) => {
-    // Ensure the message is from the same window and origin
-    if (event.source !== window || event.origin !== window.location.origin) {
-      return;
-    }
+  window.addEventListener('message', (event) => {
+    void (async () => {
+      // Ensure the message is from the same window and origin
+      if (event.source !== window || event.origin !== window.location.origin) {
+        return;
+      }
 
-    const message = event.data as { type?: string; options?: unknown; selectedCredentialId?: string };
+      const message = event.data as { type?: string; options?: unknown; selectedUniqueId?: string };
 
-    if (message && message.type === 'webauthn-create') {
-      // Handle navigator.credentials.create()
-      try {
-        if (message.options && typeof message.options === 'object') {
-          const opts = message.options as CreationOptions;
-          const credential = await interceptor.interceptCreate(opts);
-          if (credential === null) {
+      if (message && message.type === 'webauthn-create') {
+        // Handle navigator.credentials.create()
+        try {
+          if (message.options && typeof message.options === 'object') {
+            const creationOptions = message.options as CreationOptions;
+            const credential = await interceptor.interceptCreate(creationOptions);
+            if (credential === null) {
+              window.postMessage({ type: 'webauthn-create-fallback' }, '*');
+            } else {
+              const response = {
+                type: credential.type,
+                id: credential.id,
+                rawId: base64UrlEncode(credential.rawId),
+                response: {
+                  clientDataJSON: base64UrlEncode(
+                    (credential.response as AuthenticatorAttestationResponse).clientDataJSON,
+                  ),
+                  attestationObject: base64UrlEncode(
+                    (credential.response as AuthenticatorAttestationResponse).attestationObject,
+                  ),
+                  ...(() => {
+                    const attestationResponse = credential.response as AuthenticatorAttestationResponse & {
+                      getAuthenticatorData?: () => ArrayBuffer;
+                      getPublicKey?: () => ArrayBuffer;
+                      getPublicKeyAlgorithm?: () => number;
+                    };
+                    const extras: Record<string, unknown> = {};
+                    const authData = attestationResponse.getAuthenticatorData?.();
+                    if (authData) extras.authenticatorData = base64UrlEncode(authData);
+                    const publicKeyDer = attestationResponse.getPublicKey?.();
+                    if (publicKeyDer) extras.publicKeyDER = base64UrlEncode(publicKeyDer);
+                    const publicKeyAlgorithm = attestationResponse.getPublicKeyAlgorithm?.();
+                    if (publicKeyAlgorithm !== undefined) extras.publicKeyAlgorithm = publicKeyAlgorithm;
+                    return extras;
+                  })(),
+                },
+                authenticatorAttachment: credential.authenticatorAttachment,
+              };
+
+              window.postMessage({ type: 'webauthn-create-response', response }, '*');
+            }
+          } else {
             window.postMessage({ type: 'webauthn-create-fallback' }, '*');
-          } else {
-            const response = {
-              type: credential.type,
-              id: credential.id,
-              rawId: base64UrlEncode(credential.rawId),
-              response: {
-                clientDataJSON: base64UrlEncode(
-                  (credential.response as AuthenticatorAttestationResponse).clientDataJSON,
-                ),
-                attestationObject: base64UrlEncode(
-                  (credential.response as AuthenticatorAttestationResponse).attestationObject,
-                ),
-                ...(() => {
-                  const att = credential.response as AuthenticatorAttestationResponse & {
-                    getAuthenticatorData?: () => ArrayBuffer;
-                    getPublicKey?: () => ArrayBuffer;
-                    getPublicKeyAlgorithm?: () => number;
-                  };
-                  const extras: Record<string, unknown> = {};
-                  const authData = att.getAuthenticatorData?.();
-                  if (authData) extras.authenticatorData = base64UrlEncode(authData);
-                  const publicKeyDer = att.getPublicKey?.();
-                  if (publicKeyDer) extras.publicKeyDER = base64UrlEncode(publicKeyDer);
-                  const alg = att.getPublicKeyAlgorithm?.();
-                  if (alg !== undefined) extras.publicKeyAlgorithm = alg;
-                  return extras;
-                })(),
-              },
-              authenticatorAttachment: credential.authenticatorAttachment,
-            };
-
-            window.postMessage({ type: 'webauthn-create-response', response }, '*');
           }
-        } else {
-          window.postMessage({ type: 'webauthn-create-fallback' }, '*');
+        } catch (error: unknown) {
+          const messageText = error instanceof Error ? error.message : String(error);
+          logDebug('[Dispatcher] Error handling WebAuthn create', error);
+          window.postMessage({ type: 'webauthn-create-error', error: messageText }, '*');
         }
-      } catch (error: unknown) {
-        const messageText = error instanceof Error ? error.message : String(error);
-        logDebug('[Dispatcher] Error handling WebAuthn create', error);
-        window.postMessage({ type: 'webauthn-create-error', error: messageText }, '*');
-      }
-    } else if (message && message.type === 'webauthn-get') {
-      // Handle navigator.credentials.get()
-      try {
-        if (message.options && typeof message.options === 'object') {
-          const opts = message.options as RequestOptions;
-          const credential = await interceptor.interceptGet(opts);
-          if (credential === null) {
+      } else if (message && message.type === 'webauthn-get') {
+        // Handle navigator.credentials.get()
+        try {
+          if (message.options && typeof message.options === 'object') {
+            const requestOptions = message.options as RequestOptions;
+            const credential = await interceptor.interceptGet(requestOptions);
+            if (credential === null) {
+              window.postMessage({ type: 'webauthn-get-fallback' }, '*');
+            } else {
+              const assertionResp = credential.response as AuthenticatorAssertionResponse;
+              const response = {
+                type: credential.type,
+                id: credential.id,
+                rawId: base64UrlEncode(credential.rawId),
+                response: {
+                  clientDataJSON: base64UrlEncode(credential.response.clientDataJSON),
+                  authenticatorData: base64UrlEncode(assertionResp.authenticatorData),
+                  signature: base64UrlEncode(assertionResp.signature),
+                  userHandle: assertionResp.userHandle ? base64UrlEncode(assertionResp.userHandle) : null,
+                },
+                authenticatorAttachment: credential.authenticatorAttachment,
+              };
+
+              window.postMessage({ type: 'webauthn-get-response', response }, '*');
+            }
+          } else {
             window.postMessage({ type: 'webauthn-get-fallback' }, '*');
-          } else {
-            const assertionResp = credential.response as AuthenticatorAssertionResponse;
-            const response = {
-              type: credential.type,
-              id: credential.id,
-              rawId: base64UrlEncode(credential.rawId),
-              response: {
-                clientDataJSON: base64UrlEncode(credential.response.clientDataJSON),
-                authenticatorData: base64UrlEncode(assertionResp.authenticatorData),
-                signature: base64UrlEncode(assertionResp.signature),
-                userHandle: assertionResp.userHandle ? base64UrlEncode(assertionResp.userHandle) : null,
-              },
-              authenticatorAttachment: credential.authenticatorAttachment,
-            };
-
-            window.postMessage({ type: 'webauthn-get-response', response }, '*');
           }
-        } else {
-          window.postMessage({ type: 'webauthn-get-fallback' }, '*');
+        } catch (error: unknown) {
+          const messageText = error instanceof Error ? error.message : String(error);
+          logDebug('[Dispatcher] Error handling WebAuthn get', error);
+          window.postMessage({ type: 'webauthn-get-error', error: messageText }, '*');
         }
-      } catch (error: unknown) {
-        const messageText = error instanceof Error ? error.message : String(error);
-        logDebug('[Dispatcher] Error handling WebAuthn get', error);
-        window.postMessage({ type: 'webauthn-get-error', error: messageText }, '*');
       }
-    }
+    })();
   });
 
   logDebug('[Dispatcher] WebAuthn content script fully initialized');

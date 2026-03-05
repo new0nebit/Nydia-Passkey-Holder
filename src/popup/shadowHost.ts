@@ -65,7 +65,7 @@ function createShadowHost(): {
 
 export async function showPopup(
   payload: PopupInitPayload,
-  onAction: (selectedCredentialId?: string) => Promise<unknown>,
+  onAction: (selectedUniqueId?: string) => Promise<unknown>,
 ): Promise<unknown> {
   if (activePopup) {
     activePopup.cleanup('closed');
@@ -132,7 +132,7 @@ export async function showPopup(
 
           actionInFlight = true;
           try {
-            const result = await onAction(message.selectedCredentialId);
+            const result = await onAction(message.selectedUniqueId);
             if (result && typeof result === 'object' && 'error' in result) {
               sendPopupError((result as { error?: unknown }).error ?? 'Unknown error');
               actionInFlight = false;
