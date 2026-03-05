@@ -5,10 +5,7 @@ import {
   CredentialMetadata,
   EncryptedEnvelope,
   EncryptedRecord,
-  GetAssertionOptions,
   RenterdSettings,
-  SerializedCredentialDescriptor,
-  SerializedRequestOptions,
   StoredCredential,
 } from './types';
 import { base64UrlDecode, base64UrlEncode } from './utils/base64url';
@@ -19,35 +16,11 @@ const subtle = crypto.subtle;
 // Simple per-credential mutex to avoid race conditions during counter updates
 const counterLocks: Map<string, Promise<void>> = new Map();
 
-type FindCredentialOptions = SerializedRequestOptions | GetAssertionOptions;
-
-// Helper function to extract rpId from various option formats
-function extractRpId(options: FindCredentialOptions): string | undefined {
-  if (!options || typeof options !== 'object') return undefined;
-
-  const opts = options as { publicKey?: unknown; origin?: string };
-  if (!opts.publicKey || typeof opts.publicKey !== 'object') {
-    // Fallback to origin
-    return opts.origin ? new URL(opts.origin).hostname : undefined;
-  }
-
-  const publicKey = opts.publicKey as { rpId?: string; rp?: { id?: string } };
-  return publicKey.rpId ?? publicKey.rp?.id ?? (opts.origin ? new URL(opts.origin).hostname : undefined);
-}
-
-// Helper function to normalize credential ID to string
-function normalizeCredentialId(id: unknown): string | undefined {
-  if (typeof id === 'string') return id;
-  if (id instanceof ArrayBuffer) return base64UrlEncode(new Uint8Array(id));
-  if (id instanceof Uint8Array) return base64UrlEncode(id);
-  return undefined;
-}
-
 // IndexedDB
 const DB_NAME = 'NydiaDB';
 const DB_VERSION = 4;
-export const STORE_NAME = 'storedCredentials';
-export const SETTINGS_STORE = 'settings';
+const STORE_NAME = 'storedCredentials';
+const SETTINGS_STORE = 'settings';
 
 function setupStores(db: IDBDatabase) {
   if (!db.objectStoreNames.contains(STORE_NAME)) {
@@ -58,7 +31,7 @@ function setupStores(db: IDBDatabase) {
   }
 }
 
-export function openDB(): Promise<IDBDatabase> {
+function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => setupStores(request.result);
@@ -202,7 +175,7 @@ export async function openSecret(uniqueId: string): Promise<SecretPayload> {
 }
 
 // Settings Management
-export async function saveSettings(settings: RenterdSettings): Promise<void> {
+async function saveSettings(settings: RenterdSettings): Promise<void> {
   const db = await openDB();
   await new Promise<void>((resolve) => {
     db
@@ -224,7 +197,7 @@ export async function getSettings(): Promise<RenterdSettings | null> {
 }
 
 // Stored Credential Management
-export async function saveCredential(credential: StoredCredential): Promise<void> {
+async function saveCredential(credential: StoredCredential): Promise<void> {
   const encryptedRecord = await encryptCredential(credential);
   const db = await openDB();
   await new Promise<void>((resolve) => {
@@ -364,47 +337,6 @@ export async function savePrivateKey(
 export async function handleMessageInBackground(message: BackgroundMessage): Promise<unknown> {
   try {
     switch (message.type) {
-      case 'saveCredential':
-        if (!message.credential) return { error: 'Missing credential' };
-        await saveCredential(message.credential as StoredCredential);
-        return { status: 'ok' };
-
-      case 'findCredential': {
-        const opts = message.options;
-
-        if (!opts || typeof opts !== 'object' || !('publicKey' in opts) || !opts.publicKey) {
-          return { error: 'Invalid options: publicKey is required' };
-        }
-
-        const rp = extractRpId(opts);
-        if (!rp) return { error: 'Missing rpId' };
-
-        if (message.selectedUniqueId) {
-          const record = await getEncryptedRecord(message.selectedUniqueId);
-          if (record) return { uniqueId: message.selectedUniqueId };
-          return { error: 'Not found' };
-        }
-
-        const allowCredentials = (opts.publicKey as { allowCredentials?: SerializedCredentialDescriptor[] })
-          ?.allowCredentials;
-
-        if (Array.isArray(allowCredentials) && allowCredentials.length) {
-          for (const ac of allowCredentials) {
-            const id = normalizeCredentialId(ac.id);
-            if (!id) continue;
-            const uid = await createUniqueId(rp, id);
-            const record = await getEncryptedRecord(uid);
-            if (record) return { uniqueId: uid };
-          }
-          return { error: 'Not found' };
-        }
-
-        const metadataList = await getAllCredentialsMetadata();
-        const found = metadataList.find((metadata) => metadata.rpId === rp);
-        if (found) return { uniqueId: found.uniqueId };
-        return { error: 'Not found' };
-      }
-
       case 'updateCredentialCounter':
         if (typeof message.uniqueId !== 'string') return { error: 'Invalid uniqueId' };
         await updateCredentialCounter(message.uniqueId);
@@ -441,18 +373,4 @@ export async function handleMessageInBackground(message: BackgroundMessage): Pro
     const errorMessage = error instanceof Error ? error.message : String(error);
     return { error: errorMessage };
   }
-}
-
-// Background proxy helpers
-export async function findCredential(
-  options: SerializedRequestOptions | GetAssertionOptions,
-  selectedUniqueId?: string,
-): Promise<{ uniqueId: string }> {
-  const response = await handleMessageInBackground({
-    type: 'findCredential',
-    options,
-    selectedUniqueId,
-  }) as { uniqueId: string } | { error: string };
-  if ('error' in response) throw new Error(response.error);
-  return response;
 }
