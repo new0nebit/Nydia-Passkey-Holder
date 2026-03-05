@@ -24,7 +24,7 @@ export type PopupInitMessage = {
 type PopupActionMessage = {
   type: typeof PopupMessage.Action;
   sessionId: string;
-  selectedCredentialId?: string;
+  selectedUniqueId?: string;
 };
 
 type PopupCloseMessage = {

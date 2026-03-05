@@ -186,28 +186,19 @@ async function encryptCredential(credential: StoredCredential): Promise<Encrypte
 }
 
 type MetadataPayload = { rpId: string; userName?: string; creationTime: number };
-type SecretPayload = {
+export type SecretPayload = {
   credentialId: string;
   userHandle: string;
   publicKeyAlgorithm: number;
-  counter: number;
   privateKey: string;
+  counter: number;
 };
 
-async function decryptCredential(record: EncryptedRecord): Promise<StoredCredential> {
-  const [metadataKey, secretKey] = await Promise.all([deriveMetadataKey(), deriveSecretKey()]);
-
-  const [metadataPayload, secretPayload] = await Promise.all([
-    openEnvelope<MetadataPayload>(metadataKey, record.metadata),
-    openEnvelope<SecretPayload>(secretKey, record.secret),
-  ]);
-
-  return {
-    uniqueId: record.uniqueId,
-    isSynced: record.isSynced ?? false,
-    ...metadataPayload,
-    ...secretPayload,
-  };
+export async function openSecret(uniqueId: string): Promise<SecretPayload> {
+  const record = await getEncryptedRecord(uniqueId);
+  if (!record) throw new Error('Credential not found');
+  const key = await deriveSecretKey();
+  return openEnvelope<SecretPayload>(key, record.secret);
 }
 
 // Settings Management
@@ -244,27 +235,6 @@ export async function saveCredential(credential: StoredCredential): Promise<void
   });
 }
 
-export async function getAllStoredCredentials(): Promise<StoredCredential[]> {
-  const db = await openDB();
-  const encryptedRecords: EncryptedRecord[] = await new Promise((resolve) => {
-    db
-      .transaction(STORE_NAME, 'readonly')
-      .objectStore(STORE_NAME)
-      .getAll().onsuccess = (event) =>
-        resolve((event.target as IDBRequest<EncryptedRecord[]>).result ?? []);
-  });
-
-  const credentials: StoredCredential[] = [];
-  for (const encryptedRecord of encryptedRecords) {
-    try {
-      credentials.push(await decryptCredential(encryptedRecord));
-    } catch (error) {
-      logError('[Store] decrypt error', error);
-    }
-  }
-  return credentials;
-}
-
 export async function getAllCredentialsMetadata(): Promise<CredentialMetadata[]> {
   const db = await openDB();
   const encryptedRecords: EncryptedRecord[] = await new Promise((resolve) => {
@@ -296,12 +266,6 @@ export async function getAllCredentialsMetadata(): Promise<CredentialMetadata[]>
   return metadataList;
 }
 
-async function getStoredCredentialByCredentialId(
-  credentialId: string,
-): Promise<StoredCredential | undefined> {
-  return (await getAllStoredCredentials()).find((credential) => credential.credentialId === credentialId);
-}
-
 // Get encrypted credential directly from DB
 export async function getEncryptedRecord(
   uniqueId: string,
@@ -328,23 +292,26 @@ export async function saveEncryptedRecord(record: EncryptedRecord): Promise<void
 }
 
 // counter + Sia sync
-export function updateCredentialCounter(credentialId: string): Promise<void> {
-  const pendingLock = counterLocks.get(credentialId) ?? Promise.resolve();
+export function updateCredentialCounter(uniqueId: string): Promise<void> {
+  const pendingLock = counterLocks.get(uniqueId) ?? Promise.resolve();
 
   const lockPromise = pendingLock.then(async () => {
-    const credential = await getStoredCredentialByCredentialId(credentialId);
-    if (!credential) throw new Error('Credential not found');
+    const record = await getEncryptedRecord(uniqueId);
+    if (!record) throw new Error('Credential not found');
 
-    credential.counter++;
-    credential.isSynced = false;
+    const secretKey = await deriveSecretKey();
+    const secretPayload = await openEnvelope<SecretPayload>(secretKey, record.secret);
+    secretPayload.counter++;
 
-    const encUnsynced = await encryptCredential(credential);
-    await saveEncryptedRecord(encUnsynced);
+    const { credentialId, userHandle, publicKeyAlgorithm, privateKey, counter } = secretPayload;
+    const newSecret = await sealEnvelope(secretKey, { credentialId, userHandle, publicKeyAlgorithm, privateKey, counter });
+    const updated: EncryptedRecord = { ...record, secret: newSecret, isSynced: false };
+    await saveEncryptedRecord(updated);
 
-    uploadPasskeyDirect(encUnsynced).then(async (result) => {
+    uploadPasskeyDirect(updated).then(async (result) => {
       if (result.success) {
-        encUnsynced.isSynced = true;
-        await saveEncryptedRecord(encUnsynced);
+        updated.isSynced = true;
+        await saveEncryptedRecord(updated);
       } else {
         logWarn('[Store] counter sync Sia', result.error);
       }
@@ -353,8 +320,8 @@ export function updateCredentialCounter(credentialId: string): Promise<void> {
     });
   });
 
-  counterLocks.set(credentialId, lockPromise);
-  void lockPromise.finally(() => counterLocks.delete(credentialId));
+  counterLocks.set(uniqueId, lockPromise);
+  void lockPromise.finally(() => counterLocks.delete(uniqueId));
   return lockPromise;
 }
 
@@ -402,17 +369,7 @@ export async function handleMessageInBackground(message: BackgroundMessage): Pro
         await saveCredential(message.credential as StoredCredential);
         return { status: 'ok' };
 
-      case 'getStoredCredential':
-        if (typeof message.credentialId !== 'string') return { error: 'Invalid credentialId' };
-        return (
-          (await getStoredCredentialByCredentialId(message.credentialId)) ?? { error: 'Not found' }
-        );
-
-      case 'getAllStoredCredentials':
-        return getAllStoredCredentials();
-
       case 'findCredential': {
-        const list = await getAllStoredCredentials();
         const opts = message.options;
 
         if (!opts || typeof opts !== 'object' || !('publicKey' in opts) || !opts.publicKey) {
@@ -422,11 +379,10 @@ export async function handleMessageInBackground(message: BackgroundMessage): Pro
         const rp = extractRpId(opts);
         if (!rp) return { error: 'Missing rpId' };
 
-        if (message.selectedCredentialId) {
-          const found = list.find(
-            (credential) => credential.credentialId === message.selectedCredentialId && credential.rpId === rp,
-          );
-          return found ?? { error: 'Not found' };
+        if (message.selectedUniqueId) {
+          const record = await getEncryptedRecord(message.selectedUniqueId);
+          if (record) return { uniqueId: message.selectedUniqueId };
+          return { error: 'Not found' };
         }
 
         const allowCredentials = (opts.publicKey as { allowCredentials?: SerializedCredentialDescriptor[] })
@@ -436,16 +392,22 @@ export async function handleMessageInBackground(message: BackgroundMessage): Pro
           for (const ac of allowCredentials) {
             const id = normalizeCredentialId(ac.id);
             if (!id) continue;
-            const found = list.find((credential) => credential.credentialId === id && credential.rpId === rp);
-            if (found) return found;
+            const uid = await createUniqueId(rp, id);
+            const record = await getEncryptedRecord(uid);
+            if (record) return { uniqueId: uid };
           }
+          return { error: 'Not found' };
         }
-        return list.find((credential) => credential.rpId === rp) ?? { error: 'Not found' };
+
+        const metadataList = await getAllCredentialsMetadata();
+        const found = metadataList.find((metadata) => metadata.rpId === rp);
+        if (found) return { uniqueId: found.uniqueId };
+        return { error: 'Not found' };
       }
 
       case 'updateCredentialCounter':
-        if (typeof message.credentialId !== 'string') return { error: 'Invalid credentialId' };
-        await updateCredentialCounter(message.credentialId);
+        if (typeof message.uniqueId !== 'string') return { error: 'Invalid uniqueId' };
+        await updateCredentialCounter(message.uniqueId);
         return { status: 'ok' };
 
       case 'getAllCredentialsMetadata':
@@ -484,13 +446,13 @@ export async function handleMessageInBackground(message: BackgroundMessage): Pro
 // Background proxy helpers
 export async function findCredential(
   options: SerializedRequestOptions | GetAssertionOptions,
-  selectedCredentialId?: string,
-): Promise<StoredCredential> {
+  selectedUniqueId?: string,
+): Promise<{ uniqueId: string }> {
   const response = await handleMessageInBackground({
     type: 'findCredential',
     options,
-    selectedCredentialId,
-  }) as StoredCredential | { error: string };
+    selectedUniqueId,
+  }) as { uniqueId: string } | { error: string };
   if ('error' in response) throw new Error(response.error);
   return response;
 }

@@ -73,8 +73,6 @@ export interface StoredCredential {
 
 export interface Account {
   username: string;
-  userHandle: string;
-  credentialId: string;
   uniqueId: string;
   creationTime?: number;
 }
@@ -111,7 +109,7 @@ export interface BackgroundMessage {
   type: string;
   options?: SerializedPublicKeyOptions | GetAssertionOptions | CredentialCreationOptions;
   rpId?: string;
-  selectedCredentialId?: string;
+  selectedUniqueId?: string;
   uniqueId?: string;
   uniqueIds?: string[];
   wrappedKey?: number[];

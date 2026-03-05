@@ -4,11 +4,13 @@ import { logDebug, logError, logInfo } from './logger';
 import {
   createUniqueId,
   findCredential,
-  getAllStoredCredentials,
+  getAllCredentialsMetadata,
   getEncryptedRecord,
+  openSecret,
   savePrivateKey,
   updateCredentialCounter,
 } from './store';
+import type { SecretPayload } from './store';
 import {
   Account,
   AssertionResponse,
@@ -71,7 +73,7 @@ function rawToDer(rawSignature: ArrayBuffer): ArrayBuffer {
   const r = raw.slice(0, 32);
   const s = raw.slice(32, 64);
 
-  // Prepend zero if the first byte is greater than 0x80
+  // Prepend zero if the high bit is set (value >= 0x80)
   const prependZeroIfNeeded = (buffer: Uint8Array): Uint8Array => {
     if (buffer[0] & 0x80) {
       const extendedBuffer = new Uint8Array(buffer.length + 1);
@@ -129,19 +131,15 @@ function chooseAlgorithm(
 
 // Load private key from stored credential and prepare it for signing
 async function loadPrivateKey(
-  credentialId: string,
-): Promise<[CryptoKey, SigningAlgorithm, number]> {
-  const credential = (await getAllStoredCredentials()).find(
-    (c) => c.credentialId === credentialId,
-  );
-  if (!credential) throw new Error('Credential not found');
-
-  const pkcs8 = new Uint8Array(base64UrlDecode(credential.privateKey));
+  uniqueId: string,
+): Promise<[CryptoKey, SigningAlgorithm, SecretPayload]> {
+  const secretPayload = await openSecret(uniqueId);
+  const pkcs8 = new Uint8Array(base64UrlDecode(secretPayload.privateKey));
 
   let algorithmParams: EcKeyImportParams | RsaHashedImportParams | Algorithm;
   let signingAlgorithm: SigningAlgorithm;
 
-  switch (credential.publicKeyAlgorithm) {
+  switch (secretPayload.publicKeyAlgorithm) {
     case -7:
       algorithmParams = { name: 'ECDSA', namedCurve: 'P-256' };
       signingAlgorithm = new ES256();
@@ -159,7 +157,7 @@ async function loadPrivateKey(
   }
 
   const privateKey = await subtle.importKey('pkcs8', pkcs8, algorithmParams, false, ['sign']);
-  return [privateKey, signingAlgorithm, credential.counter];
+  return [privateKey, signingAlgorithm, secretPayload];
 }
 
 // Convert buffer to hexadecimal string
@@ -291,7 +289,7 @@ export async function createCredential(
     const rpIdHash = new Uint8Array(await sha256(new TextEncoder().encode(rpId)));
     const flags = 0x45; // UP=1 (User Present), UV=1 (User Verified), AT=1 (Attested Credential Data)
     const signCount = new Uint8Array([0x00, 0x00, 0x00, 0x00]); // Initial sign count
-    const credentialIdLength = new Uint8Array([
+    const credentialIdLengthBytes = new Uint8Array([
       (credentialId.length >> 8) & 0xff,
       credentialId.length & 0xff,
     ]);
@@ -301,7 +299,7 @@ export async function createCredential(
         1 +
         signCount.length +
         AAGUID.length +
-        credentialIdLength.length +
+        credentialIdLengthBytes.length +
         credentialId.length +
         cosePublicKey.length,
     );
@@ -319,8 +317,8 @@ export async function createCredential(
     authenticatorData.set(AAGUID, offset);
     offset += AAGUID.length;
 
-    authenticatorData.set(credentialIdLength, offset);
-    offset += credentialIdLength.length;
+    authenticatorData.set(credentialIdLengthBytes, offset);
+    offset += credentialIdLengthBytes.length;
 
     authenticatorData.set(credentialId, offset);
     offset += credentialId.length;
@@ -380,7 +378,7 @@ export async function createCredential(
 // Process get assertion operation by finding credential and signing challenge
 export async function handleGetAssertion(
   options: GetAssertionOptions,
-  selectedCredentialId?: string,
+  selectedUniqueId?: string,
 ): Promise<AssertionResponse> {
   logInfo('[Authenticator] Starting assertion handling...');
   logDebug('[Authenticator] Assertion options', options);
@@ -399,7 +397,7 @@ export async function handleGetAssertion(
     challengeBuffer = new Uint8Array(toArrayBuffer(options.publicKey.challenge));
     challengeString = options.publicKey.challenge;
   } else {
-    // Challenge as ArrayBuffer
+    // Challenge as binary (ArrayBuffer or Uint8Array)
     challengeBuffer = new Uint8Array(toArrayBuffer(options.publicKey.challenge));
     challengeString = base64UrlEncode(challengeBuffer);
   }
@@ -407,24 +405,20 @@ export async function handleGetAssertion(
   logDebug('[Authenticator] Challenge buffer (hex)', bufferToHex(challengeBuffer));
   logDebug('[Authenticator] Challenge string', challengeString);
 
-  // Search for stored credentials
-  const storedCredential = await findCredential(options, selectedCredentialId);
-
-  if (!storedCredential) {
-    throw new Error('No matching credential found');
-  }
+  // Search for stored credentials — returns only uniqueId
+  const { uniqueId } = await findCredential(options, selectedUniqueId);
 
   // Determine rpId
   const rpId = options.publicKey.rpId || new URL(options.origin).hostname;
   logDebug('[Authenticator] Using rpId', rpId);
 
-  // Load private key and algorithm
-  const [secretKey, algorithm, counter] = await loadPrivateKey(storedCredential.credentialId);
+  // Load private key, algorithm, and secret payload
+  const [secretKey, algorithm, secretPayload] = await loadPrivateKey(uniqueId);
 
   logDebug('[Authenticator] Loaded private key and algorithm', {
     secretKeyType: secretKey.type,
     algorithmName: getAlgorithmName(algorithm),
-    counter,
+    counter: secretPayload.counter,
   });
 
   // Form authenticatorData
@@ -434,7 +428,7 @@ export async function handleGetAssertion(
   const flags = new Uint8Array([0x05]); // UP=1 (User Present), UV=1 (User Verified)
   const signCount = new Uint8Array(4);
   const dataView = new DataView(signCount.buffer);
-  dataView.setUint32(0, counter + 1, false); // Big-endian
+  dataView.setUint32(0, secretPayload.counter + 1, false); // Big-endian
 
   const authenticatorData = new Uint8Array(rpIdHash.length + flags.length + signCount.length);
 
@@ -515,18 +509,18 @@ export async function handleGetAssertion(
   logDebug('[Authenticator] Signature (base64url)', base64UrlEncode(signature));
 
   // Update credential counter
-  await updateCredentialCounter(storedCredential.credentialId);
+  await updateCredentialCounter(uniqueId);
 
   // Construct the response
   const response: AssertionResponse = {
     type: 'public-key',
-    id: storedCredential.credentialId,
-    rawId: storedCredential.credentialId,
+    id: secretPayload.credentialId,
+    rawId: secretPayload.credentialId,
     response: {
       clientDataJSON: base64UrlEncode(clientDataJSON),
       authenticatorData: base64UrlEncode(authenticatorData),
       signature: base64UrlEncode(signature),
-      userHandle: storedCredential.userHandle || null,
+      userHandle: secretPayload.userHandle || null,
     },
   };
 
@@ -537,20 +531,12 @@ export async function handleGetAssertion(
 
 // Return available credentials matching the relying party ID
 export async function getAvailableCredentials(rpId: string): Promise<Account[]> {
-  const storedCredentials = await getAllStoredCredentials();
-  const accounts: Account[] = [];
-
-  for (const cred of storedCredentials) {
-    if (cred.rpId === rpId) {
-      accounts.push({
-        username: cred.userName || 'Unknown user',
-        userHandle: cred.userHandle,
-        credentialId: cred.credentialId,
-        uniqueId: cred.uniqueId,
-        creationTime: cred.creationTime,
-      });
-    }
-  }
-
-  return accounts;
+  const metadataList = await getAllCredentialsMetadata();
+  return metadataList
+    .filter((metadata) => metadata.rpId === rpId)
+    .map((metadata) => ({
+      username: metadata.userName || 'Unknown user',
+      uniqueId: metadata.uniqueId,
+      creationTime: metadata.creationTime,
+    }));
 }
