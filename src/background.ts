@@ -241,6 +241,7 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
       case 'handleGetAssertion':
         if (!(await getRootKeyIfAvailable())) return { error: 'rootKeyMissing' };
         if (!msg.options?.publicKey) return { error: 'Invalid options: publicKey is required' };
+        if (!msg.selectedUniqueId) return { error: 'Missing selectedUniqueId' };
         return await handleGetAssertion(
           toGetAssertionOptions(msg.options as SerializedRequestOptions),
           msg.selectedUniqueId,
