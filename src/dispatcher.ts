@@ -97,8 +97,8 @@ class WebAuthnInterceptor {
       }
 
       const userName =
-        type === 'create' && this.isCreateOptions(normalizedOptions) && normalizedOptions.publicKey.user
-          ? normalizedOptions.publicKey.user.name
+        type === 'create'
+          ? (normalizedOptions as CreationOptions).publicKey.user.name
           : '';
 
       const payload: PopupInitPayload = {
@@ -146,12 +146,7 @@ class WebAuthnInterceptor {
     }
   }
 
-  private isCreateOptions(options: CreationOptions | RequestOptions): options is CreationOptions {
-    return 'user' in options.publicKey;
-  }
-
   private withOrigin<T extends CreationOptions | RequestOptions>(options: T): T {
-    if (options.origin) return options;
     return {
       ...options,
       origin: window.location.origin,
@@ -163,8 +158,8 @@ class WebAuthnInterceptor {
     options: CreationOptions | RequestOptions,
     type: WebAuthnOperationType,
   ): string {
-    if (type === 'create' && this.isCreateOptions(options)) {
-      return options.publicKey.rp?.id || window.location.hostname;
+    if (type === 'create') {
+      return (options as CreationOptions).publicKey.rp?.id || window.location.hostname;
     }
     return (options as RequestOptions).publicKey.rpId || window.location.hostname;
   }

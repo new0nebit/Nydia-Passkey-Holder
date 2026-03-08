@@ -4,6 +4,7 @@ import { logDebug, logError, logInfo } from './logger';
 import {
   createUniqueId,
   getAllCredentialsMetadata,
+  getCredentialsMetadataByUniqueIds,
   getEncryptedRecord,
   openSecret,
   savePrivateKey,
@@ -175,6 +176,28 @@ function getAlgorithmName(algorithm: SigningAlgorithm): AlgorithmName {
   return 'Ed25519';
 }
 
+async function resolveAllowedUniqueIds(
+  rpId: string,
+  allowCredentials?: PublicKeyCredentialDescriptor[],
+): Promise<Set<string> | null> {
+  if (!Array.isArray(allowCredentials) || allowCredentials.length === 0) {
+    return null;
+  }
+
+  const uniqueIds = await Promise.all(
+    allowCredentials.map(async (descriptor) => {
+      const descriptorId = descriptor.id as string | ArrayBuffer | Uint8Array;
+      const credentialId =
+        typeof descriptorId === 'string'
+          ? descriptorId
+          : base64UrlEncode(toArrayBuffer(descriptorId));
+      return createUniqueId(rpId, credentialId);
+    }),
+  );
+
+  return new Set(uniqueIds);
+}
+
 // Create a new credential
 export async function createCredential(
   options: CredentialCreationOptions,
@@ -205,8 +228,10 @@ export async function createCredential(
     logDebug(`[Authenticator] ${userIdLog}`);
 
     // Determine rpId
-    const rpId =
-      options.publicKey.rpId || options.publicKey.rp.id || new URL(options.origin).hostname;
+    const rpId = options.publicKey.rpId || options.publicKey.rp.id;
+    if (!rpId) {
+      throw new Error('rpId is missing in credential creation options');
+    }
     logDebug('[Authenticator] rpId', rpId);
 
     // Choose a signing algorithm
@@ -359,7 +384,7 @@ export async function createCredential(
     };
 
     logInfo('[Authenticator] Credential created successfully');
-    logDebug('[Authenticator] Credential', createResponse);
+    logDebug('[Authenticator] Attestation response', createResponse);
 
     return createResponse;
   } catch (error: unknown) {
@@ -402,8 +427,16 @@ export async function handleGetAssertion(
   logDebug('[Authenticator] Challenge string', challengeString);
 
   // Determine rpId
-  const rpId = options.publicKey.rpId || new URL(options.origin).hostname;
+  const rpId = options.publicKey.rpId;
+  if (!rpId) {
+    throw new Error('rpId is missing in assertion options');
+  }
   logDebug('[Authenticator] Using rpId', rpId);
+
+  const allowedUniqueIds = await resolveAllowedUniqueIds(rpId, options.publicKey.allowCredentials);
+  if (allowedUniqueIds && !allowedUniqueIds.has(selectedUniqueId)) {
+    throw new DOMException('Selected credential is not allowed for this request', 'NotAllowedError');
+  }
 
   // Load private key, algorithm, and secret payload
   const [privateKey, algorithm, secretPayload] = await loadPrivateKey(selectedUniqueId);
@@ -517,19 +550,28 @@ export async function handleGetAssertion(
     },
   };
 
-  logDebug('[Authenticator] Constructed assertion response', response);
+  logDebug('[Authenticator] Assertion response', response);
 
   return response;
 }
 
 // Return available credentials matching the relying party ID
-export async function getAvailableCredentials(rpId: string): Promise<Account[]> {
-  const metadataList = await getAllCredentialsMetadata();
-  return metadataList
-    .filter((metadata) => metadata.rpId === rpId)
-    .map((metadata) => ({
-      username: metadata.userName || 'Unknown user',
-      uniqueId: metadata.uniqueId,
-      creationTime: metadata.creationTime,
-    }));
+export async function getAvailableCredentials(
+  rpId: string,
+  allowCredentialIds?: string[],
+): Promise<Account[]> {
+  const filtered =
+    Array.isArray(allowCredentialIds) && allowCredentialIds.length > 0
+      ? await getCredentialsMetadataByUniqueIds(
+          await Promise.all(
+            allowCredentialIds.map(async (credentialId) => createUniqueId(rpId, credentialId)),
+          ),
+        )
+      : (await getAllCredentialsMetadata()).filter((metadata) => metadata.rpId === rpId);
+
+  return filtered.map((metadata) => ({
+    username: metadata.userName || 'Unknown user',
+    uniqueId: metadata.uniqueId,
+    creationTime: metadata.creationTime,
+  }));
 }
