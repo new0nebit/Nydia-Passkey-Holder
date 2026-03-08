@@ -9,7 +9,7 @@ export type PublicKeyCredentialRequestOptions =
   globalThis.PublicKeyCredentialRequestOptions;
 
 export interface SerializedCredentialDescriptor {
-  id: string | BinaryLike;
+  id: string;
   type?: string;
   transports?: string[];
 }
@@ -109,6 +109,7 @@ export interface BackgroundMessage {
   type: string;
   options?: SerializedPublicKeyOptions | GetAssertionOptions | CredentialCreationOptions;
   rpId?: string;
+  allowCredentialIds?: string[];
   selectedUniqueId?: string;
   uniqueId?: string;
   uniqueIds?: string[];

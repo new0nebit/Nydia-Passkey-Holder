@@ -170,8 +170,8 @@ export type SecretPayload = {
 export async function openSecret(uniqueId: string): Promise<SecretPayload> {
   const record = await getEncryptedRecord(uniqueId);
   if (!record) throw new Error('Credential not found');
-  const key = await deriveSecretKey();
-  return openEnvelope<SecretPayload>(key, record.secret);
+  const secretKey = await deriveSecretKey();
+  return openEnvelope<SecretPayload>(secretKey, record.secret);
 }
 
 // Settings Management
@@ -236,6 +236,35 @@ export async function getAllCredentialsMetadata(): Promise<CredentialMetadata[]>
       logError('[Store] decrypt metadata error', error);
     }
   }
+  return metadataList;
+}
+
+export async function getCredentialsMetadataByUniqueIds(
+  uniqueIds: string[],
+): Promise<CredentialMetadata[]> {
+  if (uniqueIds.length === 0) return [];
+
+  const metadataKey = await deriveMetadataKey();
+  const metadataList: CredentialMetadata[] = [];
+
+  for (const uniqueId of uniqueIds) {
+    const record = await getEncryptedRecord(uniqueId);
+    if (!record) continue;
+
+    try {
+      const metadataPayload = await openEnvelope<MetadataPayload>(metadataKey, record.metadata);
+      metadataList.push({
+        uniqueId: record.uniqueId,
+        rpId: metadataPayload.rpId,
+        userName: metadataPayload.userName,
+        creationTime: metadataPayload.creationTime,
+        isSynced: record.isSynced ?? false,
+      });
+    } catch (error) {
+      logError('[Store] decrypt metadata by uniqueIds error', error);
+    }
+  }
+
   return metadataList;
 }
 
@@ -312,7 +341,7 @@ export async function savePrivateKey(
   userId: Uint8Array,
   publicKeyAlgorithm: number,
   userName?: string,
-): Promise<void> {
+): Promise<string> {
   const pkcs8 = await subtle.exportKey('pkcs8', privateKey);
 
   const uniqueId = await createUniqueId(rpId, base64UrlEncode(credentialId));
@@ -331,6 +360,7 @@ export async function savePrivateKey(
   };
 
   await saveCredential(stored);
+  return uniqueId;
 }
 
 // Messaging in Background Context
