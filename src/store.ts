@@ -170,8 +170,8 @@ export type SecretPayload = {
 export async function openSecret(uniqueId: string): Promise<SecretPayload> {
   const record = await getEncryptedRecord(uniqueId);
   if (!record) throw new Error('Credential not found');
-  const key = await deriveSecretKey();
-  return openEnvelope<SecretPayload>(key, record.secret);
+  const secretKey = await deriveSecretKey();
+  return openEnvelope<SecretPayload>(secretKey, record.secret);
 }
 
 // Settings Management
@@ -312,7 +312,7 @@ export async function savePrivateKey(
   userId: Uint8Array,
   publicKeyAlgorithm: number,
   userName?: string,
-): Promise<void> {
+): Promise<string> {
   const pkcs8 = await subtle.exportKey('pkcs8', privateKey);
 
   const uniqueId = await createUniqueId(rpId, base64UrlEncode(credentialId));
@@ -331,6 +331,7 @@ export async function savePrivateKey(
   };
 
   await saveCredential(stored);
+  return uniqueId;
 }
 
 // Messaging in Background Context

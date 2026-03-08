@@ -270,7 +270,7 @@ export async function createCredential(
     const publicKeyDERBase64 = base64UrlEncode(publicKeyDER);
 
     // Save the private key
-    await savePrivateKey(
+    const uniqueId = await savePrivateKey(
       credentialId,
       rpId,
       keyPair.privateKey,
@@ -279,9 +279,6 @@ export async function createCredential(
       options.publicKey.user.name, // Pass the username
     );
     logDebug('[Authenticator] Private key saved');
-
-    // Create a unique ID associated with the credential
-    const uniqueId = await createUniqueId(rpId, credentialIdEncoded);
     logDebug('[Authenticator] UniqueId associated with credential created', uniqueId);
 
     // Create authenticator data
@@ -409,10 +406,10 @@ export async function handleGetAssertion(
   logDebug('[Authenticator] Using rpId', rpId);
 
   // Load private key, algorithm, and secret payload
-  const [secretKey, algorithm, secretPayload] = await loadPrivateKey(selectedUniqueId);
+  const [privateKey, algorithm, secretPayload] = await loadPrivateKey(selectedUniqueId);
 
   logDebug('[Authenticator] Loaded private key and algorithm', {
-    secretKeyType: secretKey.type,
+    privateKeyType: privateKey.type,
     algorithmName: getAlgorithmName(algorithm),
     counter: secretPayload.counter,
   });
@@ -464,7 +461,7 @@ export async function handleGetAssertion(
     // Generate raw signature
     const rawSignature = await subtle.sign(
       { name: 'ECDSA', hash: 'SHA-256' },
-      secretKey,
+      privateKey,
       signatureBase,
     );
     logDebug('[Authenticator] Generated signature using ES256 (raw format)');
@@ -487,14 +484,14 @@ export async function handleGetAssertion(
       logDebug('[Authenticator] Signature does not appear to be DER-encoded');
     }
   } else if (algorithm instanceof RS256) {
-    signature = await subtle.sign({ name: 'RSASSA-PKCS1-v1_5' }, secretKey, signatureBase);
+    signature = await subtle.sign({ name: 'RSASSA-PKCS1-v1_5' }, privateKey, signatureBase);
     logDebug('[Authenticator] Generated signature using RS256');
 
     const signatureBytes = new Uint8Array(signature);
     logDebug('[Authenticator] Signature length', signatureBytes.length);
     logDebug('[Authenticator] Signature (hex)', bufferToHex(signatureBytes));
   } else {
-    signature = await subtle.sign({ name: 'Ed25519' }, secretKey, signatureBase);
+    signature = await subtle.sign({ name: 'Ed25519' }, privateKey, signatureBase);
     logDebug('[Authenticator] Generated signature using Ed25519');
 
     const signatureBytes = new Uint8Array(signature);
