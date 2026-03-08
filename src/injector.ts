@@ -46,7 +46,6 @@
       excludeCredentials?: Array<{ id: BufferSource | string; [key: string]: unknown }>;
       [key: string]: unknown;
     };
-    origin?: string;
     [key: string]: unknown;
   };
 
@@ -56,7 +55,7 @@
 
   // Serialize BufferSource values inside publicKey options into base64url strings
   const serializeOptions = (opts: PublicKeyOptions): PublicKeyOptions => {
-    const out: PublicKeyOptions = { ...opts, origin: location.origin };
+    const out: PublicKeyOptions = { ...opts };
     if (!out.publicKey) return out;
 
     const pk = (out.publicKey = { ...out.publicKey });
@@ -162,6 +161,8 @@
             error?: string;
           }) || {};
 
+          if (typeof type !== 'string') return;
+
           switch (type) {
             case RESPONSE:
               window.removeEventListener('message', handler);
@@ -224,7 +225,7 @@
   // Emulate platform authenticator presence
   if ('PublicKeyCredential' in window) {
     const pkc = window.PublicKeyCredential as unknown as Record<string, unknown>;
-    pkc.isUserVerifyingPlatformAuthenticatorAvailable = async () => true;
-    pkc.isConditionalMediationAvailable = async () => true;
+    pkc.isUserVerifyingPlatformAuthenticatorAvailable = () => Promise.resolve(true);
+    pkc.isConditionalMediationAvailable = () => Promise.resolve(true);
   }
 })();
