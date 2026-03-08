@@ -161,6 +161,8 @@
             error?: string;
           }) || {};
 
+          if (typeof type !== 'string') return;
+
           switch (type) {
             case RESPONSE:
               window.removeEventListener('message', handler);
@@ -223,7 +225,7 @@
   // Emulate platform authenticator presence
   if ('PublicKeyCredential' in window) {
     const pkc = window.PublicKeyCredential as unknown as Record<string, unknown>;
-    pkc.isUserVerifyingPlatformAuthenticatorAvailable = async () => true;
-    pkc.isConditionalMediationAvailable = async () => true;
+    pkc.isUserVerifyingPlatformAuthenticatorAvailable = () => Promise.resolve(true);
+    pkc.isConditionalMediationAvailable = () => Promise.resolve(true);
   }
 })();
