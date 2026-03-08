@@ -14,14 +14,14 @@ export interface SigningAlgorithm {
 export class ES256 implements SigningAlgorithm {
   // Generates an ECDSA key pair using the P-256 curve.
   async generateKeyPair(): Promise<CryptoKeyPair> {
-    return (await subtle.generateKey(
+    return await subtle.generateKey(
       {
         name: 'ECDSA',
         namedCurve: 'P-256',
       },
       true,
       ['sign', 'verify'],
-    )) as CryptoKeyPair;
+    );
   }
 
   // Signs data using the private key with ECDSA and SHA-256.
@@ -41,7 +41,7 @@ export class ES256 implements SigningAlgorithm {
 export class RS256 implements SigningAlgorithm {
   // Generates an RSA key pair with a modulus length of 2048 bits.
   async generateKeyPair(): Promise<CryptoKeyPair> {
-    return (await subtle.generateKey(
+    return await subtle.generateKey(
       {
         name: 'RSASSA-PKCS1-v1_5',
         modulusLength: 2048,
@@ -50,7 +50,7 @@ export class RS256 implements SigningAlgorithm {
       },
       true,
       ['sign', 'verify'],
-    )) as CryptoKeyPair;
+    );
   }
 
   // Signs data using the private key with RSASSA-PKCS1-v1_5 and SHA-256.
@@ -69,13 +69,13 @@ export class RS256 implements SigningAlgorithm {
 export class Ed25519 implements SigningAlgorithm {
   // Generates an Ed25519 key pair for signing and verification.
   async generateKeyPair(): Promise<CryptoKeyPair> {
-    return (await subtle.generateKey(
+    return await subtle.generateKey(
       {
         name: 'Ed25519',
       },
       true,
       ['sign', 'verify'],
-    )) as CryptoKeyPair;
+    );
   }
 
   // Signs data using the private key with Ed25519.
