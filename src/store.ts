@@ -239,6 +239,35 @@ export async function getAllCredentialsMetadata(): Promise<CredentialMetadata[]>
   return metadataList;
 }
 
+export async function getCredentialsMetadataByUniqueIds(
+  uniqueIds: string[],
+): Promise<CredentialMetadata[]> {
+  if (uniqueIds.length === 0) return [];
+
+  const metadataKey = await deriveMetadataKey();
+  const metadataList: CredentialMetadata[] = [];
+
+  for (const uniqueId of uniqueIds) {
+    const record = await getEncryptedRecord(uniqueId);
+    if (!record) continue;
+
+    try {
+      const metadataPayload = await openEnvelope<MetadataPayload>(metadataKey, record.metadata);
+      metadataList.push({
+        uniqueId: record.uniqueId,
+        rpId: metadataPayload.rpId,
+        userName: metadataPayload.userName,
+        creationTime: metadataPayload.creationTime,
+        isSynced: record.isSynced ?? false,
+      });
+    } catch (error) {
+      logError('[Store] decrypt metadata by uniqueIds error', error);
+    }
+  }
+
+  return metadataList;
+}
+
 // Get encrypted credential directly from DB
 export async function getEncryptedRecord(
   uniqueId: string,

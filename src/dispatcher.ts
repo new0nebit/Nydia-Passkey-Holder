@@ -214,11 +214,7 @@ class WebAuthnInterceptor {
       return undefined;
     }
 
-    const ids = descriptors
-      .map((descriptor) => descriptor.id)
-      .filter((id) => id.length > 0);
-
-    return ids.length > 0 ? ids : undefined;
+    return descriptors.map((descriptor) => descriptor.id);
   }
 
   // Retrieves available credentials for the given RP ID.
