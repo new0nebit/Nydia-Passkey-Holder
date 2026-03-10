@@ -26,9 +26,6 @@ const isTopFrame = (() => {
 
 // Class responsible for intercepting and handling WebAuthn operations.
 class WebAuthnInterceptor {
-  private createAbortController: AbortController | null = null;
-  private getAbortController: AbortController | null = null;
-
   // Intercepts navigator.credentials.create() calls.
   async interceptCreate(options: CreationOptions): Promise<SerializedWebAuthnResponse | null> {
     return this.interceptWebAuthn(options, 'create');
@@ -49,23 +46,6 @@ class WebAuthnInterceptor {
     if (!options || typeof options !== 'object') {
       logDebug(`[Dispatcher] Invalid options for ${type}`, options);
       throw new DOMException('Invalid options', 'NotAllowedError');
-    }
-
-    // Abort any previous operation of the same type
-    const abortController =
-      type === 'create' ? this.createAbortController : this.getAbortController;
-
-    if (abortController) {
-      logDebug(`[Dispatcher] Aborting previous ${type} operation`);
-      abortController.abort();
-    }
-
-    // Create a new AbortController for the current operation
-    const newAbortController = new AbortController();
-    if (type === 'create') {
-      this.createAbortController = newAbortController;
-    } else {
-      this.getAbortController = newAbortController;
     }
 
     try {
@@ -133,16 +113,8 @@ class WebAuthnInterceptor {
 
       return result as SerializedWebAuthnResponse;
     } catch (error: unknown) {
-      const isAbort = error instanceof DOMException && error.name === 'AbortError';
-      logDebug(`[Dispatcher] WebAuthn ${type} operation ${isAbort ? 'was aborted' : 'failed'}`, error);
+      logDebug(`[Dispatcher] WebAuthn ${type} operation failed`, error);
       throw error;
-    } finally {
-      // Reset the AbortController
-      if (type === 'create') {
-        this.createAbortController = null;
-      } else {
-        this.getAbortController = null;
-      }
     }
   }
 
@@ -164,48 +136,29 @@ class WebAuthnInterceptor {
     return (options as RequestOptions).publicKey.rpId || window.location.hostname;
   }
 
-  // Handles the passkey save operation (create).
   async handlePasskeySave(options: CreationOptions): Promise<unknown> {
-    try {
-      logDebug('[Dispatcher] Handling passkey save operation', options);
-
-      // Send message to background script
-      const response = (await browser.runtime.sendMessage({
-        type: 'createCredential',
-        options,
-      })) as { error?: string };
-      if (response.error) {
-        throw new Error(response.error);
-      }
-      return response;
-    } catch (error: unknown) {
-      logDebug('[Dispatcher] Error creating passkey', error instanceof Error ? error.message : error);
-      throw error;
+    logDebug('[Dispatcher] Handling passkey save operation', options);
+    const response = (await browser.runtime.sendMessage({
+      type: 'createCredential',
+      options,
+    })) as { error?: string };
+    if (response.error) {
+      throw new Error(response.error);
     }
+    return response;
   }
 
-  // Handles the get assertion operation.
   async handleGetAssertion(options: RequestOptions, selectedUniqueId?: string): Promise<unknown> {
-    try {
-      logDebug('[Dispatcher] Handling get assertion operation', {
-        options,
-        selectedUniqueId,
-      });
-
-      // Send message to background script
-      const response = (await browser.runtime.sendMessage({
-        type: 'handleGetAssertion',
-        options,
-        selectedUniqueId,
-      })) as { error?: string };
-      if (response.error) {
-        throw new Error(response.error);
-      }
-      return response;
-    } catch (error: unknown) {
-      logDebug('[Dispatcher] Error creating assertion', error);
-      throw error;
+    logDebug('[Dispatcher] Handling get assertion operation', { options, selectedUniqueId });
+    const response = (await browser.runtime.sendMessage({
+      type: 'handleGetAssertion',
+      options,
+      selectedUniqueId,
+    })) as { error?: string };
+    if (response.error) {
+      throw new Error(response.error);
     }
+    return response;
   }
 
   private getAllowCredentialIds(options: RequestOptions): string[] | undefined {
@@ -253,54 +206,45 @@ function initDispatcher(): void {
   // Initialize the interceptor
   const interceptor = new WebAuthnInterceptor();
 
+  type Handler = (options: CreationOptions | RequestOptions) => Promise<SerializedWebAuthnResponse | null>;
+
+  const messageHandlers = new Map<string, Handler>([
+    ['webauthn-create', (options) => interceptor.interceptCreate(options as CreationOptions)],
+    ['webauthn-get', (options) => interceptor.interceptGet(options as RequestOptions)],
+  ]);
+
   // Listens for messages from the injector.js script and handles them.
   window.addEventListener('message', (event) => {
     void (async () => {
-      // Ensure the message is from the same window and origin
       if (event.source !== window || event.origin !== window.location.origin) {
         return;
       }
 
-      const message = event.data as { type?: string; options?: unknown; selectedUniqueId?: string };
+      const message = event.data as { type?: string; options?: unknown };
+      if (!message?.type) return;
 
-      if (message && message.type === 'webauthn-create') {
-        // Handle navigator.credentials.create()
-        try {
-          if (message.options && typeof message.options === 'object') {
-            const creationOptions = message.options as CreationOptions;
-            const response = await interceptor.interceptCreate(creationOptions);
-            if (response === null) {
-              window.postMessage({ type: 'webauthn-create-fallback' }, '*');
-            } else {
-              window.postMessage({ type: 'webauthn-create-response', response }, '*');
-            }
-          } else {
-            window.postMessage({ type: 'webauthn-create-fallback' }, '*');
-          }
-        } catch (error: unknown) {
-          const messageText = error instanceof Error ? error.message : String(error);
-          logDebug('[Dispatcher] Error handling WebAuthn create', error);
-          window.postMessage({ type: 'webauthn-create-error', error: messageText }, '*');
+      const handler = messageHandlers.get(message.type);
+      if (!handler) return;
+
+      const messageType = message.type;
+
+      try {
+        if (!message.options || typeof message.options !== 'object') {
+          window.postMessage({ type: `${messageType}-fallback` }, '*');
+          return;
         }
-      } else if (message && message.type === 'webauthn-get') {
-        // Handle navigator.credentials.get()
-        try {
-          if (message.options && typeof message.options === 'object') {
-            const requestOptions = message.options as RequestOptions;
-            const response = await interceptor.interceptGet(requestOptions);
-            if (response === null) {
-              window.postMessage({ type: 'webauthn-get-fallback' }, '*');
-            } else {
-              window.postMessage({ type: 'webauthn-get-response', response }, '*');
-            }
-          } else {
-            window.postMessage({ type: 'webauthn-get-fallback' }, '*');
-          }
-        } catch (error: unknown) {
-          const messageText = error instanceof Error ? error.message : String(error);
-          logDebug('[Dispatcher] Error handling WebAuthn get', error);
-          window.postMessage({ type: 'webauthn-get-error', error: messageText }, '*');
+
+        const response = await handler(message.options as CreationOptions | RequestOptions);
+
+        if (response === null) {
+          window.postMessage({ type: `${messageType}-fallback` }, '*');
+        } else {
+          window.postMessage({ type: `${messageType}-response`, response }, '*');
         }
+      } catch (error: unknown) {
+        const messageText = error instanceof Error ? error.message : String(error);
+        logDebug(`[Dispatcher] Error handling ${messageType}`, error);
+        window.postMessage({ type: `${messageType}-error`, error: messageText }, '*');
       }
     })();
   });
