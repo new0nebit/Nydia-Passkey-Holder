@@ -151,12 +151,12 @@ function isValidEncryptedRecord(value: unknown): value is EncryptedRecord {
 }
 
 // Type guard for BackgroundMessage
-function isBackgroundMessage(msg: unknown): msg is BackgroundMessage {
+function isBackgroundMessage(message: unknown): message is BackgroundMessage {
   return (
-    typeof msg === 'object' &&
-    msg !== null &&
-    'type' in msg &&
-    typeof (msg as { type: unknown }).type === 'string'
+    typeof message === 'object' &&
+    message !== null &&
+    'type' in message &&
+    typeof (message as { type: unknown }).type === 'string'
   );
 }
 
@@ -298,38 +298,51 @@ async function handleStoreWrappedKey(wrappedKey: unknown) {
 }
 
 // Router
-async function router(msg: BackgroundMessage): Promise<unknown> {
+async function router(message: BackgroundMessage): Promise<unknown> {
   try {
-    switch (msg.type) {
+    switch (message.type) {
       case 'createCredential':
-        if (!(await getRootKeyIfAvailable())) return { error: 'rootKeyMissing' };
-        if (!msg.options?.publicKey) return { error: 'Invalid options: publicKey is required' };
-        return await createCredential(toCreationOptions(msg.options as SerializedCreationOptions));
+        if (!(await getRootKeyIfAvailable())) {
+          logDebug('[Background] createCredential blocked: rootKeyMissing');
+          return { error: 'rootKeyMissing' };
+        }
+        if (!message.options?.publicKey) {
+          logDebug('[Background] createCredential blocked: Invalid options: publicKey is required');
+          return { error: 'Invalid options: publicKey is required' };
+        }
+        return await createCredential(toCreationOptions(message.options as SerializedCreationOptions));
 
       case 'handleGetAssertion':
-        if (!(await getRootKeyIfAvailable())) return { error: 'rootKeyMissing' };
-        if (!msg.options?.publicKey) return { error: 'Invalid options: publicKey is required' };
-        if (!msg.selectedUniqueId) return { error: 'Missing selectedUniqueId' };
+        if (!message.options?.publicKey) {
+          logDebug('[Background] handleGetAssertion blocked: Invalid options: publicKey is required');
+          return { error: 'Invalid options: publicKey is required' };
+        }
+        if (!message.selectedUniqueId) {
+          logDebug('[Background] handleGetAssertion blocked: Missing selectedUniqueId');
+          return { error: 'Missing selectedUniqueId' };
+        }
         return await handleGetAssertion(
-          toGetAssertionOptions(msg.options as SerializedRequestOptions),
-          msg.selectedUniqueId,
+          toGetAssertionOptions(message.options as SerializedRequestOptions),
+          message.selectedUniqueId,
         );
 
       case 'getAvailableCredentials':
-        if (!msg.rpId) return { error: 'Missing rpId' };
+        if (!(await getRootKeyIfAvailable())) {
+          logDebug('[Background] getAvailableCredentials blocked: rootKeyMissing');
+          return { error: 'rootKeyMissing' };
+        }
         return await getAvailableCredentials(
-          msg.rpId,
-          Array.isArray(msg.allowCredentialIds) ? msg.allowCredentialIds : undefined,
+          message.rpId!,
+          Array.isArray(message.allowCredentialIds) ? message.allowCredentialIds : undefined,
         );
 
-      // Use uniqueId
       case 'uploadToSia':
-        if (!msg.uniqueId) return { error: 'Missing uniqueId' };
-        return await handleUploadToSia(msg.uniqueId);
+        if (!message.uniqueId) return { error: 'Missing uniqueId' };
+        return await handleUploadToSia(message.uniqueId);
 
       case 'uploadUnsyncedPasskeys':
-        if (!msg.uniqueIds) return { error: 'Missing uniqueIds' };
-        return await handleUploadUnsyncedPasskeys(msg.uniqueIds);
+        if (!message.uniqueIds) return { error: 'Missing uniqueIds' };
+        return await handleUploadUnsyncedPasskeys(message.uniqueIds);
 
       case 'syncFromSia':
         return await handleSyncFromSia();
@@ -338,11 +351,11 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
         return await handleGetWrappingPublicKey();
 
       case 'storeWrappedKey':
-        return await handleStoreWrappedKey(msg.wrappedKey);
+        return await handleStoreWrappedKey(message.wrappedKey);
 
       // proxy → store.ts
       default:
-        return await handleMessageInBackground(msg);
+        return await handleMessageInBackground(message);
     }
   } catch (error: unknown) {
     const isExpectedInvalidStateError =
@@ -352,8 +365,8 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
       logError('[Background] router error', error);
     }
 
-    const message = error instanceof Error ? error.message : String(error);
-    return { error: message };
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return { error: errorMessage };
   }
 }
 
