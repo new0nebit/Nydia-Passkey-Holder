@@ -228,6 +228,75 @@ async function handleSyncFromSia() {
   return { success: failed === 0, syncedCount: synced, failedCount: failed };
 }
 
+async function handleGetWrappingPublicKey() {
+  try {
+    if (!wrappingKeyPair) {
+      wrappingKeyPair = await initializeWrappingKey();
+    }
+
+    const publicKeyBuffer = await crypto.subtle.exportKey('spki', wrappingKeyPair.publicKey);
+
+    return {
+      publicKey: Array.from(new Uint8Array(publicKeyBuffer)),
+      algorithm: 'RSA-OAEP',
+      hash: 'SHA-256',
+    };
+  } catch (error: unknown) {
+    logError('[Background] Failed to export public key', error);
+    return { error: 'Failed to generate wrapping key' };
+  }
+}
+
+async function handleStoreWrappedKey(wrappedKey: unknown) {
+  if (!Array.isArray(wrappedKey)) {
+    return { error: 'Invalid wrapped key format' };
+  }
+
+  if (!wrappingKeyPair) {
+    return { error: 'Wrapping key pair not initialized' };
+  }
+
+  let wrappedKeyBytes: Uint8Array | null = null;
+
+  try {
+    wrappedKeyBytes = new Uint8Array(wrappedKey);
+
+    const rootKey = await crypto.subtle.unwrapKey(
+      'raw',
+      wrappedKeyBytes as BufferSource,
+      wrappingKeyPair.privateKey,
+      { name: 'RSA-OAEP' },
+      { name: 'HKDF' },
+      false,
+      ['deriveKey'],
+    );
+
+    await setRootKey(rootKey);
+    wrappingKeyPair = null;
+
+    logDebug('[Background] Root key securely stored and RSA keys cleaned up');
+    return { status: 'ok' };
+  } catch (error: unknown) {
+    logError('[Background] Failed to unwrap and store key', error);
+    wrappingKeyPair = null;
+
+    if (error instanceof DOMException) {
+      switch (error.name) {
+        case 'OperationError':
+          return { error: 'Failed to unwrap key - invalid or corrupted data' };
+        case 'DataError':
+          return { error: 'Invalid key format' };
+        default:
+          return { error: `Crypto operation failed: ${error.name}` };
+      }
+    }
+
+    return { error: 'Failed to store key securely' };
+  } finally {
+    secureCleanup(wrappedKeyBytes);
+  }
+}
+
 // Router
 async function router(msg: BackgroundMessage): Promise<unknown> {
   try {
@@ -265,88 +334,11 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
       case 'syncFromSia':
         return await handleSyncFromSia();
 
-      // Get public key for wrapping
-      case 'getWrappingPublicKey': {
-        try {
-          // Lazy initialization - generate only when needed
-          if (!wrappingKeyPair) {
-            wrappingKeyPair = await initializeWrappingKey();
-          }
+      case 'getWrappingPublicKey':
+        return await handleGetWrappingPublicKey();
 
-          // Export public key in SPKI format
-          const publicKeyBuffer = await crypto.subtle.exportKey('spki', wrappingKeyPair.publicKey);
-
-          return {
-            publicKey: Array.from(new Uint8Array(publicKeyBuffer)),
-            algorithm: 'RSA-OAEP',
-            hash: 'SHA-256',
-          };
-        } catch (error: unknown) {
-          logError('[Background] Failed to export public key', error);
-          return { error: 'Failed to generate wrapping key' };
-        }
-      }
-
-      // Store wrapped key using RSA-OAEP
-      case 'storeWrappedKey': {
-        let wrappedKeyBytes: Uint8Array | null = null;
-
-        try {
-          // Validate input
-          if (!Array.isArray(msg.wrappedKey)) {
-            return { error: 'Invalid wrapped key format' };
-          }
-
-          if (!wrappingKeyPair) {
-            return { error: 'Wrapping key pair not initialized' };
-          }
-
-          // Convert array back to Uint8Array
-          wrappedKeyBytes = new Uint8Array(msg.wrappedKey);
-
-          // Unwrap the key using our private key
-          const rootKey = await crypto.subtle.unwrapKey(
-            'raw',
-            wrappedKeyBytes as BufferSource,
-            wrappingKeyPair.privateKey,
-            { name: 'RSA-OAEP' },
-            { name: 'HKDF' },
-            false, // not extractable
-            ['deriveKey'],
-          );
-
-          // Persist the root key
-          await setRootKey(rootKey);
-
-          // Clean up RSA keys after successful storage
-          wrappingKeyPair = null;
-
-          logDebug('[Background] Root key securely stored and RSA keys cleaned up');
-          return { status: 'ok' };
-        } catch (error: unknown) {
-          logError('[Background] Failed to unwrap and store key', error);
-
-          // Clean up on error too
-          wrappingKeyPair = null;
-
-          if (error instanceof DOMException) {
-            switch (error.name) {
-              case 'OperationError':
-                return { error: 'Failed to unwrap key - invalid or corrupted data' };
-              case 'DataError':
-                return { error: 'Invalid key format' };
-              default:
-                return { error: `Crypto operation failed: ${error.name}` };
-            }
-          }
-
-          return { error: 'Failed to store key securely' };
-        } finally {
-          if (wrappedKeyBytes) {
-            secureCleanup(wrappedKeyBytes);
-          }
-        }
-      }
+      case 'storeWrappedKey':
+        return await handleStoreWrappedKey(msg.wrappedKey);
 
       // proxy → store.ts
       default:
