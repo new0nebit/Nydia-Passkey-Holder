@@ -253,54 +253,45 @@ function initDispatcher(): void {
   // Initialize the interceptor
   const interceptor = new WebAuthnInterceptor();
 
+  type Handler = (options: CreationOptions | RequestOptions) => Promise<SerializedWebAuthnResponse | null>;
+
+  const messageHandlers = new Map<string, Handler>([
+    ['webauthn-create', (options) => interceptor.interceptCreate(options as CreationOptions)],
+    ['webauthn-get', (options) => interceptor.interceptGet(options as RequestOptions)],
+  ]);
+
   // Listens for messages from the injector.js script and handles them.
   window.addEventListener('message', (event) => {
     void (async () => {
-      // Ensure the message is from the same window and origin
       if (event.source !== window || event.origin !== window.location.origin) {
         return;
       }
 
-      const message = event.data as { type?: string; options?: unknown; selectedUniqueId?: string };
+      const message = event.data as { type?: string; options?: unknown };
+      if (!message?.type) return;
 
-      if (message && message.type === 'webauthn-create') {
-        // Handle navigator.credentials.create()
-        try {
-          if (message.options && typeof message.options === 'object') {
-            const creationOptions = message.options as CreationOptions;
-            const response = await interceptor.interceptCreate(creationOptions);
-            if (response === null) {
-              window.postMessage({ type: 'webauthn-create-fallback' }, '*');
-            } else {
-              window.postMessage({ type: 'webauthn-create-response', response }, '*');
-            }
-          } else {
-            window.postMessage({ type: 'webauthn-create-fallback' }, '*');
-          }
-        } catch (error: unknown) {
-          const messageText = error instanceof Error ? error.message : String(error);
-          logDebug('[Dispatcher] Error handling WebAuthn create', error);
-          window.postMessage({ type: 'webauthn-create-error', error: messageText }, '*');
+      const handler = messageHandlers.get(message.type);
+      if (!handler) return;
+
+      const messageType = message.type;
+
+      try {
+        if (!message.options || typeof message.options !== 'object') {
+          window.postMessage({ type: `${messageType}-fallback` }, '*');
+          return;
         }
-      } else if (message && message.type === 'webauthn-get') {
-        // Handle navigator.credentials.get()
-        try {
-          if (message.options && typeof message.options === 'object') {
-            const requestOptions = message.options as RequestOptions;
-            const response = await interceptor.interceptGet(requestOptions);
-            if (response === null) {
-              window.postMessage({ type: 'webauthn-get-fallback' }, '*');
-            } else {
-              window.postMessage({ type: 'webauthn-get-response', response }, '*');
-            }
-          } else {
-            window.postMessage({ type: 'webauthn-get-fallback' }, '*');
-          }
-        } catch (error: unknown) {
-          const messageText = error instanceof Error ? error.message : String(error);
-          logDebug('[Dispatcher] Error handling WebAuthn get', error);
-          window.postMessage({ type: 'webauthn-get-error', error: messageText }, '*');
+
+        const response = await handler(message.options as CreationOptions | RequestOptions);
+
+        if (response === null) {
+          window.postMessage({ type: `${messageType}-fallback` }, '*');
+        } else {
+          window.postMessage({ type: `${messageType}-response`, response }, '*');
         }
+      } catch (error: unknown) {
+        const messageText = error instanceof Error ? error.message : String(error);
+        logDebug(`[Dispatcher] Error handling ${messageType}`, error);
+        window.postMessage({ type: `${messageType}-error`, error: messageText }, '*');
       }
     })();
   });
