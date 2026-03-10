@@ -26,9 +26,6 @@ const isTopFrame = (() => {
 
 // Class responsible for intercepting and handling WebAuthn operations.
 class WebAuthnInterceptor {
-  private createAbortController: AbortController | null = null;
-  private getAbortController: AbortController | null = null;
-
   // Intercepts navigator.credentials.create() calls.
   async interceptCreate(options: CreationOptions): Promise<SerializedWebAuthnResponse | null> {
     return this.interceptWebAuthn(options, 'create');
@@ -49,23 +46,6 @@ class WebAuthnInterceptor {
     if (!options || typeof options !== 'object') {
       logDebug(`[Dispatcher] Invalid options for ${type}`, options);
       throw new DOMException('Invalid options', 'NotAllowedError');
-    }
-
-    // Abort any previous operation of the same type
-    const abortController =
-      type === 'create' ? this.createAbortController : this.getAbortController;
-
-    if (abortController) {
-      logDebug(`[Dispatcher] Aborting previous ${type} operation`);
-      abortController.abort();
-    }
-
-    // Create a new AbortController for the current operation
-    const newAbortController = new AbortController();
-    if (type === 'create') {
-      this.createAbortController = newAbortController;
-    } else {
-      this.getAbortController = newAbortController;
     }
 
     try {
@@ -133,16 +113,8 @@ class WebAuthnInterceptor {
 
       return result as SerializedWebAuthnResponse;
     } catch (error: unknown) {
-      const isAbort = error instanceof DOMException && error.name === 'AbortError';
-      logDebug(`[Dispatcher] WebAuthn ${type} operation ${isAbort ? 'was aborted' : 'failed'}`, error);
+      logDebug(`[Dispatcher] WebAuthn ${type} operation failed`, error);
       throw error;
-    } finally {
-      // Reset the AbortController
-      if (type === 'create') {
-        this.createAbortController = null;
-      } else {
-        this.getAbortController = null;
-      }
     }
   }
 
