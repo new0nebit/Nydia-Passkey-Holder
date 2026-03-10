@@ -164,48 +164,29 @@ class WebAuthnInterceptor {
     return (options as RequestOptions).publicKey.rpId || window.location.hostname;
   }
 
-  // Handles the passkey save operation (create).
   async handlePasskeySave(options: CreationOptions): Promise<unknown> {
-    try {
-      logDebug('[Dispatcher] Handling passkey save operation', options);
-
-      // Send message to background script
-      const response = (await browser.runtime.sendMessage({
-        type: 'createCredential',
-        options,
-      })) as { error?: string };
-      if (response.error) {
-        throw new Error(response.error);
-      }
-      return response;
-    } catch (error: unknown) {
-      logDebug('[Dispatcher] Error creating passkey', error instanceof Error ? error.message : error);
-      throw error;
+    logDebug('[Dispatcher] Handling passkey save operation', options);
+    const response = (await browser.runtime.sendMessage({
+      type: 'createCredential',
+      options,
+    })) as { error?: string };
+    if (response.error) {
+      throw new Error(response.error);
     }
+    return response;
   }
 
-  // Handles the get assertion operation.
   async handleGetAssertion(options: RequestOptions, selectedUniqueId?: string): Promise<unknown> {
-    try {
-      logDebug('[Dispatcher] Handling get assertion operation', {
-        options,
-        selectedUniqueId,
-      });
-
-      // Send message to background script
-      const response = (await browser.runtime.sendMessage({
-        type: 'handleGetAssertion',
-        options,
-        selectedUniqueId,
-      })) as { error?: string };
-      if (response.error) {
-        throw new Error(response.error);
-      }
-      return response;
-    } catch (error: unknown) {
-      logDebug('[Dispatcher] Error creating assertion', error);
-      throw error;
+    logDebug('[Dispatcher] Handling get assertion operation', { options, selectedUniqueId });
+    const response = (await browser.runtime.sendMessage({
+      type: 'handleGetAssertion',
+      options,
+      selectedUniqueId,
+    })) as { error?: string };
+    if (response.error) {
+      throw new Error(response.error);
     }
+    return response;
   }
 
   private getAllowCredentialIds(options: RequestOptions): string[] | undefined {
