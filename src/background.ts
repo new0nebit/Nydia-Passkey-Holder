@@ -302,27 +302,36 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
   try {
     switch (msg.type) {
       case 'createCredential':
-        if (!(await getRootKeyIfAvailable())) return { error: 'rootKeyMissing' };
-        if (!msg.options?.publicKey) return { error: 'Invalid options: publicKey is required' };
+        if (!(await getRootKeyIfAvailable())) {
+          logDebug('[Background] createCredential blocked: rootKeyMissing');
+          return { error: 'rootKeyMissing' };
+        }
+        if (!msg.options?.publicKey) {
+          logDebug('[Background] createCredential blocked: Invalid options: publicKey is required');
+          return { error: 'Invalid options: publicKey is required' };
+        }
         return await createCredential(toCreationOptions(msg.options as SerializedCreationOptions));
 
       case 'handleGetAssertion':
-        if (!(await getRootKeyIfAvailable())) return { error: 'rootKeyMissing' };
-        if (!msg.options?.publicKey) return { error: 'Invalid options: publicKey is required' };
-        if (!msg.selectedUniqueId) return { error: 'Missing selectedUniqueId' };
+        if (!msg.options?.publicKey) {
+          logDebug('[Background] handleGetAssertion blocked: Invalid options: publicKey is required');
+          return { error: 'Invalid options: publicKey is required' };
+        }
+        if (!msg.selectedUniqueId) {
+          logDebug('[Background] handleGetAssertion blocked: Missing selectedUniqueId');
+          return { error: 'Missing selectedUniqueId' };
+        }
         return await handleGetAssertion(
           toGetAssertionOptions(msg.options as SerializedRequestOptions),
           msg.selectedUniqueId,
         );
 
       case 'getAvailableCredentials':
-        if (!msg.rpId) return { error: 'Missing rpId' };
         return await getAvailableCredentials(
-          msg.rpId,
+          msg.rpId!,
           Array.isArray(msg.allowCredentialIds) ? msg.allowCredentialIds : undefined,
         );
 
-      // Use uniqueId
       case 'uploadToSia':
         if (!msg.uniqueId) return { error: 'Missing uniqueId' };
         return await handleUploadToSia(msg.uniqueId);
