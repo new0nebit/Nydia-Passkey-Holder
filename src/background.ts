@@ -327,6 +327,10 @@ async function router(msg: BackgroundMessage): Promise<unknown> {
         );
 
       case 'getAvailableCredentials':
+        if (!(await getRootKeyIfAvailable())) {
+          logDebug('[Background] getAvailableCredentials blocked: rootKeyMissing');
+          return { error: 'rootKeyMissing' };
+        }
         return await getAvailableCredentials(
           msg.rpId!,
           Array.isArray(msg.allowCredentialIds) ? msg.allowCredentialIds : undefined,
