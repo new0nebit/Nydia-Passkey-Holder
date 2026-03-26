@@ -441,9 +441,8 @@ export async function handleGetAssertion(
   // Load private key, algorithm, and secret payload
   const [privateKey, algorithm, secretPayload] = await loadPrivateKey(selectedUniqueId);
 
-  logDebug('[Authenticator] Loaded private key and algorithm', {
-    privateKeyType: privateKey.type,
-    algorithmName: getAlgorithmName(algorithm),
+  logDebug('[Authenticator] Loaded private key', {
+    alg: secretPayload.publicKeyAlgorithm,
     counter: secretPayload.counter,
   });
 
