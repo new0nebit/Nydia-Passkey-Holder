@@ -85,8 +85,8 @@ function createButton(
   appendSvgTo(button, iconSvg);
   button.appendChild(create('span', [], label));
 
-  button.addEventListener('click', (e) => {
-    e.stopPropagation();
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
     void Promise.resolve(handler(button)).catch(() => {});
   });
 
@@ -329,7 +329,7 @@ export class Menu {
   }
 
   private buildHeader(listRoot: HTMLElement): void {
-    this.cleanup.forEach((fn) => fn());
+    this.cleanup.forEach((cleanup) => cleanup());
     this.cleanup = [];
 
     const header = create('div', ['header-container']);
@@ -384,13 +384,13 @@ export class Menu {
       menu.classList.toggle('hidden');
     };
 
-    burger.addEventListener('click', (e) => {
-      e.stopPropagation();
+    burger.addEventListener('click', (event) => {
+      event.stopPropagation();
       toggle();
     });
 
-    const handleOutsideClick = (e: Event) => {
-      if (!wrap.contains(e.target as Node) && !menu.classList.contains('hidden')) {
+    const handleOutsideClick = (event: Event) => {
+      if (!wrap.contains(event.target as Node) && !menu.classList.contains('hidden')) {
         toggle();
       }
     };
