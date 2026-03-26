@@ -5,26 +5,30 @@
   console.info('[Injector] WebAuthn injector initialized');
 
   // Convert base64url-encoded string to ArrayBuffer
-  const toArrayBuffer = (b64: string): ArrayBuffer => {
-    const bin = atob(b64.replace(/-/g, '+').replace(/_/g, '/'));
-    const len = bin.length;
-    const view = new Uint8Array(len);
-    for (let i = 0; i < len; ++i) view[i] = bin.charCodeAt(i);
-    return view.buffer;
+  const toArrayBuffer = (base64url: string): ArrayBuffer => {
+    const binaryString = atob(base64url.replace(/-/g, '+').replace(/_/g, '/'));
+    const bufferLength = binaryString.length;
+    const bytes = new Uint8Array(bufferLength);
+    for (let i = 0; i < bufferLength; ++i) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes.buffer;
   };
 
   // Convert any BufferSource to base64url-encoded string
-  const toBase64url = (buf: BufferSource): string => {
-    const bytes = toUint8Array(buf);
+  const toBase64url = (bufferSource: BufferSource): string => {
+    const bytes = toUint8Array(bufferSource);
 
-    let bin = '';
-    for (let i = 0; i < bytes.length; ++i) bin += String.fromCharCode(bytes[i]);
-    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    let binaryString = '';
+    for (let i = 0; i < bytes.length; ++i) {
+      binaryString += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binaryString).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
   };
 
   // Remove AbortSignal to avoid DataClone errors
-  const stripSignal = <T extends { signal?: unknown }>(obj: T): Omit<T, 'signal'> => {
-    const { signal, ...rest } = obj as { signal?: unknown } & Record<string, unknown>;
+  const stripSignal = <T extends { signal?: unknown }>(options: T): Omit<T, 'signal'> => {
+    const { signal, ...rest } = options as { signal?: unknown } & Record<string, unknown>;
     void signal; // Explicitly mark as unused
     return rest as Omit<T, 'signal'>;
   };
@@ -50,122 +54,127 @@
   };
 
   // Check if value is BufferSource (ArrayBuffer or ArrayBufferView)
-  const isBufferSource = (v: unknown): v is BufferSource =>
-    v instanceof ArrayBuffer || ArrayBuffer.isView(v);
+  const isBufferSource = (value: unknown): value is BufferSource =>
+    value instanceof ArrayBuffer || ArrayBuffer.isView(value);
 
   // Serialize BufferSource values inside publicKey options into base64url strings
-  const serializeOptions = (opts: PublicKeyOptions): PublicKeyOptions => {
-    const out: PublicKeyOptions = { ...opts };
-    if (!out.publicKey) return out;
+  const serializeOptions = (options: PublicKeyOptions): PublicKeyOptions => {
+    const serializedOptions: PublicKeyOptions = { ...options };
+    if (!serializedOptions.publicKey) return serializedOptions;
 
-    const pk = (out.publicKey = { ...out.publicKey });
+    const pkOptions = (serializedOptions.publicKey = { ...serializedOptions.publicKey });
 
-    if (isBufferSource(pk.challenge)) pk.challenge = toBase64url(pk.challenge);
+    if (isBufferSource(pkOptions.challenge)) pkOptions.challenge = toBase64url(pkOptions.challenge);
 
-    if (pk.user?.id && isBufferSource(pk.user.id)) {
-      pk.user = { ...pk.user, id: toBase64url(pk.user.id) };
+    if (pkOptions.user?.id && isBufferSource(pkOptions.user.id)) {
+      pkOptions.user = { ...pkOptions.user, id: toBase64url(pkOptions.user.id) };
     }
 
     // Handle arrays of credentials that need id conversion
-    const rewrite = (
-      arr?: Array<{ id: BufferSource | string; [key: string]: unknown }>,
+    const serializeCredentialDescriptors = (
+      descriptors?: Array<{ id: BufferSource | string; [key: string]: unknown }>,
     ): Array<{ id: string; [key: string]: unknown }> | undefined =>
-      arr?.map((d) => ({
-        ...d,
-        id: typeof d.id === 'string' ? d.id : toBase64url(d.id),
+      descriptors?.map((descriptor) => ({
+        ...descriptor,
+        id: typeof descriptor.id === 'string' ? descriptor.id : toBase64url(descriptor.id),
       }));
 
-    pk.allowCredentials = rewrite(pk.allowCredentials);
-    pk.excludeCredentials = rewrite(pk.excludeCredentials);
+    pkOptions.allowCredentials = serializeCredentialDescriptors(pkOptions.allowCredentials);
+    pkOptions.excludeCredentials = serializeCredentialDescriptors(pkOptions.excludeCredentials);
 
-    return out;
+    return serializedOptions;
   };
 
   // Convert raw response data to native-like WebAuthn response objects
   const asAuthenticatorResponse = (
-    src: Record<string, unknown>,
+    rawResponse: Record<string, unknown>,
   ): AuthenticatorAttestationResponse | AuthenticatorAssertionResponse => {
-    if ('attestationObject' in src) {
+    if ('attestationObject' in rawResponse) {
       // Registration flow: Attestation response (for credential creation)
-      const att: Record<string, unknown> = {
-        clientDataJSON: toArrayBuffer(src.clientDataJSON as string),
-        attestationObject: toArrayBuffer(src.attestationObject as string),
+      const attestationResponse: Record<string, unknown> = {
+        clientDataJSON: toArrayBuffer(rawResponse.clientDataJSON as string),
+        attestationObject: toArrayBuffer(rawResponse.attestationObject as string),
         getTransports: () => ['internal', 'hybrid'],
       };
 
       // Optional get methods
-      if (src.publicKeyDER) att.getPublicKey = () => toArrayBuffer(src.publicKeyDER as string);
-      if (src.authenticatorData)
-        att.getAuthenticatorData = () => toArrayBuffer(src.authenticatorData as string);
-      if (src.publicKeyAlgorithm !== undefined)
-        att.getPublicKeyAlgorithm = () => src.publicKeyAlgorithm;
+      if (rawResponse.publicKeyDER)
+        attestationResponse.getPublicKey = () => toArrayBuffer(rawResponse.publicKeyDER as string);
+      if (rawResponse.authenticatorData) {
+        attestationResponse.getAuthenticatorData = () =>
+          toArrayBuffer(rawResponse.authenticatorData as string);
+      }
+      if (rawResponse.publicKeyAlgorithm !== undefined) {
+        attestationResponse.getPublicKeyAlgorithm = () => rawResponse.publicKeyAlgorithm;
+      }
 
       // Set the prototype to match native browser implementations
-      Object.setPrototypeOf(att, AuthenticatorAttestationResponse.prototype);
-      return att as unknown as AuthenticatorAttestationResponse;
+      Object.setPrototypeOf(attestationResponse, AuthenticatorAttestationResponse.prototype);
+      return attestationResponse as unknown as AuthenticatorAttestationResponse;
     }
 
     // Assertion response
-    const asr: Record<string, unknown> = {
-      clientDataJSON: toArrayBuffer(src.clientDataJSON as string),
-      authenticatorData: toArrayBuffer(src.authenticatorData as string),
-      signature: toArrayBuffer(src.signature as string),
-      userHandle: src.userHandle ? toArrayBuffer(src.userHandle as string) : null,
+    const assertionResponse: Record<string, unknown> = {
+      clientDataJSON: toArrayBuffer(rawResponse.clientDataJSON as string),
+      authenticatorData: toArrayBuffer(rawResponse.authenticatorData as string),
+      signature: toArrayBuffer(rawResponse.signature as string),
+      userHandle: rawResponse.userHandle ? toArrayBuffer(rawResponse.userHandle as string) : null,
     };
-    Object.setPrototypeOf(asr, AuthenticatorAssertionResponse.prototype);
-    return asr as unknown as AuthenticatorAssertionResponse;
+    Object.setPrototypeOf(assertionResponse, AuthenticatorAssertionResponse.prototype);
+    return assertionResponse as unknown as AuthenticatorAssertionResponse;
   };
 
   // Create a PublicKeyCredential object with correct prototype chain
-  const asPublicKeyCredential = (raw: Record<string, unknown>): PublicKeyCredential => {
-    const cred: Record<string, unknown> = {
-      id: raw.id,
-      rawId: toArrayBuffer(raw.rawId as string),
-      response: asAuthenticatorResponse(raw.response as Record<string, unknown>),
-      type: raw.type ?? 'public-key',
+  const asPublicKeyCredential = (rawCredential: Record<string, unknown>): PublicKeyCredential => {
+    const credential: Record<string, unknown> = {
+      id: rawCredential.id,
+      rawId: toArrayBuffer(rawCredential.rawId as string),
+      response: asAuthenticatorResponse(rawCredential.response as Record<string, unknown>),
+      type: rawCredential.type ?? 'public-key',
       authenticatorAttachment: 'platform',
       // Return resident key capability
       getClientExtensionResults: () => ({ credProps: { rk: true } }),
     };
-    Object.setPrototypeOf(cred, PublicKeyCredential.prototype);
-    return cred as unknown as PublicKeyCredential;
+    Object.setPrototypeOf(credential, PublicKeyCredential.prototype);
+    return credential as unknown as PublicKeyCredential;
   };
 
-  type Op = 'create' | 'get';
+  type Operation = 'create' | 'get';
+  type CredentialOptions = CredentialCreationOptions | CredentialRequestOptions;
+  type CredentialMethod<T extends CredentialOptions> =
+    (options?: T) => Promise<Credential | null>;
 
   // Returns a wrapper that intercepts create/get calls
   const wrap =
-    <T extends CredentialCreationOptions | CredentialRequestOptions>(
-      op: Op,
-      original: (o?: T) => Promise<Credential | null>,
-    ): ((options?: T) => Promise<Credential | null>) =>
-    (options?: T): Promise<Credential | null> => {
+    <T extends CredentialOptions>(
+      operation: Operation,
+      original: CredentialMethod<T>,
+    ): CredentialMethod<T> =>
+    (options?: T) => {
       // Bypass for non-WebAuthn calls
       if (!options || !('publicKey' in options)) {
-        return original.call(navigator.credentials, options);
+        return original(options);
       }
 
-      // Set up message types for communication with the WebAuthn handler
-      const base = `webauthn-${op}`;
-      const RESPONSE = `${base}-response`;
-      const ERROR = `${base}-error`;
-      const FALLBACK = `${base}-fallback`;
+      // Set up message types for communication with the dispatcher
+      const messageTypePrefix = `webauthn-${operation}`;
+      const RESPONSE = `${messageTypePrefix}-response`;
+      const ERROR = `${messageTypePrefix}-error`;
+      const FALLBACK = `${messageTypePrefix}-fallback`;
 
       return new Promise((resolve, reject) => {
         // Set up one-time message listener for WebAuthn response
-        const handler = (e: MessageEvent) => {
-          if (e.source !== window) return;
-          const { type, response, error } = (e.data as {
+        const handleWindowMessage = (event: MessageEvent) => {
+          if (event.source !== window) return;
+          const { type, response, error } = (event.data as {
             type?: string;
             response?: unknown;
             error?: string;
           }) || {};
 
-          if (typeof type !== 'string') return;
-
           switch (type) {
             case RESPONSE:
-              window.removeEventListener('message', handler);
+              window.removeEventListener('message', handleWindowMessage);
               try {
                 // Transform raw response into a proper credential object
                 resolve(asPublicKeyCredential(response as Record<string, unknown>));
@@ -182,37 +191,40 @@
               break;
 
             case ERROR:
-              window.removeEventListener('message', handler);
+              window.removeEventListener('message', handleWindowMessage);
               reject(new DOMException(error, 'NotAllowedError'));
               break;
 
             case FALLBACK:
               // Fallback to native WebAuthn flow
-              window.removeEventListener('message', handler);
-              original.call(navigator.credentials, options).then(resolve).catch(reject);
+              window.removeEventListener('message', handleWindowMessage);
+              original(options).then(resolve).catch(reject);
+              break;
+
+            case undefined:
               break;
           }
         };
 
-        window.addEventListener('message', handler);
-        // Send the WebAuthn request to handler after preparing options
+        window.addEventListener('message', handleWindowMessage);
+        // Send the WebAuthn request to the dispatcher after preparing options
         const payload = serializeOptions(stripSignal(options) as PublicKeyOptions);
-        window.postMessage({ type: base, options: payload }, '*');
+        window.postMessage({ type: messageTypePrefix, options: payload }, '*');
       });
     };
 
-  type CredsLike = typeof navigator.credentials & {
+  type CredentialsLike = typeof navigator.credentials & {
     store?: typeof navigator.credentials.store;
     preventSilentAccess?: typeof navigator.credentials.preventSilentAccess;
   };
 
   // Build a custom navigator.credentials wrapper that intercepts create/get calls
-  const orig = navigator.credentials;
-  const nydiaCredentials: CredsLike = {
-    create: wrap('create', orig.create.bind(orig)),
-    get: wrap('get', orig.get.bind(orig)),
-    store: orig.store?.bind(orig),
-    preventSilentAccess: orig.preventSilentAccess?.bind(orig),
+  const nativeCredentials = navigator.credentials;
+  const nydiaCredentials: CredentialsLike = {
+    create: wrap('create', nativeCredentials.create.bind(nativeCredentials)),
+    get: wrap('get', nativeCredentials.get.bind(nativeCredentials)),
+    store: nativeCredentials.store?.bind(nativeCredentials),
+    preventSilentAccess: nativeCredentials.preventSilentAccess?.bind(nativeCredentials),
   };
 
   // Replace the entire credentials object with custom implementation
@@ -224,8 +236,10 @@
 
   // Emulate platform authenticator presence
   if ('PublicKeyCredential' in window) {
-    const pkc = window.PublicKeyCredential as unknown as Record<string, unknown>;
-    pkc.isUserVerifyingPlatformAuthenticatorAvailable = () => Promise.resolve(true);
-    pkc.isConditionalMediationAvailable = () => Promise.resolve(true);
+    const publicKeyCredentialStatics =
+      window.PublicKeyCredential as unknown as Record<string, unknown>;
+    publicKeyCredentialStatics.isUserVerifyingPlatformAuthenticatorAvailable = () =>
+      Promise.resolve(true);
+    publicKeyCredentialStatics.isConditionalMediationAvailable = () => Promise.resolve(true);
   }
 })();
