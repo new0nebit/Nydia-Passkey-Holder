@@ -97,8 +97,8 @@ function createButton(
   appendSvgTo(button, iconSvg);
   button.appendChild(create('span', [], label));
 
-  button.addEventListener('click', (event) => {
-    event.stopPropagation();
+  button.addEventListener('click', (e) => {
+    e.stopPropagation();
     void Promise.resolve(handler(button)).catch(() => {});
   });
 
@@ -285,8 +285,12 @@ export class Menu {
       const passkeyList = document.getElementById('passkey-list');
       if (!passkeyList) return;
 
+      const credentialsPromise: Promise<unknown> = browser.runtime
+        .sendMessage({ type: 'getAllCredentialsMetadata' })
+        .catch(() => []);
+
       const [credentialsRaw, settings] = await Promise.all([
-        browser.runtime.sendMessage({ type: 'getAllCredentialsMetadata' }).catch(() => []),
+        credentialsPromise,
         getSettings(),
       ]);
 
@@ -344,7 +348,7 @@ export class Menu {
   }
 
   private buildHeader(listRoot: HTMLElement): void {
-    this.cleanup.forEach((cleanup) => cleanup());
+    this.cleanup.forEach((fn) => fn());
     this.cleanup = [];
 
     const header = create('div', ['header-container']);
@@ -399,13 +403,13 @@ export class Menu {
       menu.classList.toggle('hidden');
     };
 
-    burger.addEventListener('click', (event) => {
-      event.stopPropagation();
+    burger.addEventListener('click', (e) => {
+      e.stopPropagation();
       toggle();
     });
 
-    const handleOutsideClick = (event: Event) => {
-      if (!wrap.contains(event.target as Node) && !menu.classList.contains('hidden')) {
+    const handleOutsideClick = (e: Event) => {
+      if (!wrap.contains(e.target as Node) && !menu.classList.contains('hidden')) {
         toggle();
       }
     };
