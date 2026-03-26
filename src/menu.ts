@@ -1,7 +1,7 @@
 import browser from 'browser-api';
 
 import { icons } from './ui/icons/menu';
-import { logError, logWarn } from './logger';
+import { logError } from './logger';
 import {
   getSettings,
   setNotificationDisplayer,
@@ -24,18 +24,6 @@ interface SyncDownloadResult {
   failedCount: number;
   empty: boolean;
   error: boolean;
-}
-
-function isCredentialMetadata(value: unknown): value is CredentialMetadata {
-  if (!value || typeof value !== 'object') return false;
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.uniqueId === 'string' &&
-    typeof record.rpId === 'string' &&
-    typeof record.creationTime === 'number' &&
-    typeof record.isSynced === 'boolean' &&
-    (record.userName === undefined || typeof record.userName === 'string')
-  );
 }
 
 // Domain Sanitisation
@@ -285,21 +273,18 @@ export class Menu {
       const passkeyList = document.getElementById('passkey-list');
       if (!passkeyList) return;
 
+      const credentialsPromise: Promise<unknown> = browser.runtime
+        .sendMessage({ type: 'getAllCredentialsMetadata' })
+        .catch(() => []);
+
       const [credentialsRaw, settings] = await Promise.all([
-        browser.runtime.sendMessage({ type: 'getAllCredentialsMetadata' }).catch(() => []),
+        credentialsPromise,
         getSettings(),
       ]);
 
       const credentials = Array.isArray(credentialsRaw)
-        ? credentialsRaw.filter(isCredentialMetadata)
+        ? (credentialsRaw as CredentialMetadata[])
         : [];
-      if (Array.isArray(credentialsRaw) && credentials.length !== credentialsRaw.length) {
-        logWarn('[Menu] Dropped invalid credential metadata entries', {
-          received: credentialsRaw.length,
-          kept: credentials.length,
-          dropped: credentialsRaw.length - credentials.length,
-        });
-      }
       credentials.sort((a, b) => (b.creationTime ?? 0) - (a.creationTime ?? 0));
 
       if (!document.querySelector('.header-container')) {

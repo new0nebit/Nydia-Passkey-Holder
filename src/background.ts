@@ -22,7 +22,6 @@ import {
 import {
   BackgroundMessage,
   CredentialCreationOptions,
-  EncryptedRecord,
   GetAssertionOptions,
   SerializedCreationOptions,
   SerializedCredentialDescriptor,
@@ -136,20 +135,6 @@ function toGetAssertionOptions(options: SerializedRequestOptions): GetAssertionO
   };
 }
 
-// Checks if the given object is a valid EncryptedRecord
-function isValidEncryptedRecord(value: unknown): value is EncryptedRecord {
-  return Boolean(
-    value &&
-      typeof value === 'object' &&
-      'uniqueId' in value &&
-      typeof (value as { uniqueId: unknown }).uniqueId === 'string' &&
-      'metadata' in value &&
-      'secret' in value &&
-      'isSynced' in value &&
-      typeof (value as { isSynced: unknown }).isSynced === 'boolean'
-  );
-}
-
 // Type guard for BackgroundMessage
 function isBackgroundMessage(message: unknown): message is BackgroundMessage {
   return (
@@ -211,11 +196,6 @@ async function handleSyncFromSia() {
   for (const fileName of files) {
     try {
       const encryptedRecord = await downloadPasskeyFromRenterd(fileName, settings);
-
-      if (!isValidEncryptedRecord(encryptedRecord)) {
-        failed++;
-        continue;
-      }
 
       // Save encrypted record directly to DB
       await saveEncryptedRecord(encryptedRecord);
