@@ -5,6 +5,7 @@ export const PopupMessage = {
   Action: 'nydia-popup-action',
   Close: 'nydia-popup-close',
   Error: 'nydia-popup-error',
+  Resize: 'nydia-popup-resize',
 } as const;
 
 export type PopupInitPayload = {
@@ -12,7 +13,6 @@ export type PopupInitPayload = {
   rpId: string;
   userName?: string;
   accounts?: Account[];
-  hostIsDark?: boolean;
 };
 
 export type PopupInitMessage = {
@@ -38,4 +38,11 @@ export type PopupErrorMessage = {
   message: string;
 };
 
-export type PopupFrameMessage = PopupActionMessage | PopupCloseMessage;
+export type PopupResizeMessage = {
+  type: typeof PopupMessage.Resize;
+  sessionId: string;
+  width: number;
+  height: number;
+};
+
+export type PopupFrameMessage = PopupActionMessage | PopupCloseMessage | PopupResizeMessage;

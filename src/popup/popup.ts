@@ -2,13 +2,13 @@ import browser from 'browser-api';
 
 import '../ui/styles/popup.css';
 import { logDebug, logError } from '../logger';
-import { applyPopupColorScheme } from './colorScheme';
 import {
   PopupErrorMessage,
   PopupFrameMessage,
   PopupInitMessage,
   PopupInitPayload,
   PopupMessage,
+  PopupResizeMessage,
 } from './messages';
 import { icons } from '../ui/icons/popup';
 
@@ -17,6 +17,7 @@ type PopupState = {
   port: MessagePort;
   isCreateMode: boolean;
   overlay: HTMLElement;
+  popup: HTMLElement;
   content: HTMLElement;
   buttonContainer: HTMLElement;
   cancelButton: HTMLButtonElement;
@@ -48,6 +49,17 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
 }
 
 function postToHost(state: PopupState, message: PopupFrameMessage): void {
+  state.port.postMessage(message);
+}
+
+function sendResize(state: PopupState, popup: HTMLElement): void {
+  const rect = popup.getBoundingClientRect();
+  const message: PopupResizeMessage = {
+    type: PopupMessage.Resize,
+    sessionId: state.sessionId,
+    width: Math.ceil(rect.width),
+    height: Math.ceil(rect.height),
+  };
   state.port.postMessage(message);
 }
 
@@ -96,6 +108,8 @@ function showError(state: PopupState, message: string): void {
   state.content.insertBefore(errorMessage, state.buttonContainer);
 
   resetActionButton(state);
+
+  requestAnimationFrame(() => sendResize(state, state.popup));
 }
 
 function initPopup(sessionId: string, payload: PopupInitPayload, port: MessagePort): void {
@@ -105,10 +119,8 @@ function initPopup(sessionId: string, payload: PopupInitPayload, port: MessagePo
 
   logDebug('[Popup] Initializing iframe popup');
 
-  const { operationType, rpId, userName = '', accounts = [], hostIsDark } = payload;
+  const { operationType, rpId, userName = '', accounts = [] } = payload;
   const isCreateMode = operationType === 'create';
-
-  applyPopupColorScheme(hostIsDark);
 
   // Create overlay backdrop
   const overlay = createElement('div', 'nydia-popup-overlay');
@@ -283,6 +295,7 @@ function initPopup(sessionId: string, payload: PopupInitPayload, port: MessagePo
     port,
     isCreateMode,
     overlay,
+    popup,
     content,
     buttonContainer,
     cancelButton,
@@ -344,8 +357,9 @@ function initPopup(sessionId: string, payload: PopupInitPayload, port: MessagePo
   // Add to DOM
   document.body.appendChild(overlay);
 
-  // Trigger fade-in animation
+  // Report size to host so iframe can be resized to fit content
   requestAnimationFrame(() => {
+    sendResize(state, popup);
     overlay.classList.add('show');
   });
 
