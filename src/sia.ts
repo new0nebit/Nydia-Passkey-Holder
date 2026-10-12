@@ -103,10 +103,10 @@ async function httpRequest(
 }
 
 // Get a list of passkeys from the bucket.
-export async function getPasskeysFromRenterd(
+export async function listPasskeysFromRenterd(
   settings: RenterdSettings,
 ): Promise<string[]> {
-  logDebug('[Sia] Starting getPasskeysFromRenterd', { settings });
+  logDebug('[Sia] Starting listPasskeysFromRenterd', { settings });
 
   const response = await httpRequest(buildListURL(settings), {
     method: 'GET',
