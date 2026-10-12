@@ -19,12 +19,12 @@ const counterLocks: Map<string, Promise<void>> = new Map();
 // IndexedDB
 const DB_NAME = 'NydiaDB';
 const DB_VERSION = 4;
-const STORE_NAME = 'storedCredentials';
+const PASSKEY_STORE = 'passkeys';
 const SETTINGS_STORE = 'settings';
 
 function setupStores(db: IDBDatabase) {
-  if (!db.objectStoreNames.contains(STORE_NAME)) {
-    db.createObjectStore(STORE_NAME, { keyPath: 'uniqueId' });
+  if (!db.objectStoreNames.contains(PASSKEY_STORE)) {
+    db.createObjectStore(PASSKEY_STORE, { keyPath: 'uniqueId' });
   }
   if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
     db.createObjectStore(SETTINGS_STORE, { keyPath: 'id' });
@@ -202,8 +202,8 @@ async function saveCredential(credential: StoredCredential): Promise<void> {
   const db = await openDB();
   await new Promise<void>((resolve) => {
     db
-      .transaction(STORE_NAME, 'readwrite')
-      .objectStore(STORE_NAME)
+      .transaction(PASSKEY_STORE, 'readwrite')
+      .objectStore(PASSKEY_STORE)
       .put(encryptedRecord).onsuccess = () => resolve();
   });
 }
@@ -212,8 +212,8 @@ export async function getAllCredentialsMetadata(): Promise<CredentialMetadata[]>
   const db = await openDB();
   const encryptedRecords: EncryptedRecord[] = await new Promise((resolve) => {
     db
-      .transaction(STORE_NAME, 'readonly')
-      .objectStore(STORE_NAME)
+      .transaction(PASSKEY_STORE, 'readonly')
+      .objectStore(PASSKEY_STORE)
       .getAll().onsuccess = (event) =>
         resolve((event.target as IDBRequest<EncryptedRecord[]>).result ?? []);
   });
@@ -275,8 +275,8 @@ export async function getEncryptedRecord(
   const db = await openDB();
   return new Promise((resolve) => {
     db
-      .transaction(STORE_NAME, 'readonly')
-      .objectStore(STORE_NAME)
+      .transaction(PASSKEY_STORE, 'readonly')
+      .objectStore(PASSKEY_STORE)
       .get(uniqueId).onsuccess = (event) =>
         resolve((event.target as IDBRequest<EncryptedRecord>).result ?? null);
   });
@@ -287,8 +287,8 @@ export async function saveEncryptedRecord(record: EncryptedRecord): Promise<void
   const db = await openDB();
   await new Promise<void>((resolve) => {
     db
-      .transaction(STORE_NAME, 'readwrite')
-      .objectStore(STORE_NAME)
+      .transaction(PASSKEY_STORE, 'readwrite')
+      .objectStore(PASSKEY_STORE)
       .put(record).onsuccess = () => resolve();
   });
 }
@@ -387,8 +387,8 @@ export async function handleMessageInBackground(message: BackgroundMessage): Pro
         if (typeof message.uniqueId !== 'string') return { error: 'Invalid uniqueId' };
         const db = await openDB();
         await new Promise<void>((resolve, reject) => {
-          const transaction = db.transaction(STORE_NAME, 'readwrite');
-          transaction.objectStore(STORE_NAME).delete(message.uniqueId!);
+          const transaction = db.transaction(PASSKEY_STORE, 'readwrite');
+          transaction.objectStore(PASSKEY_STORE).delete(message.uniqueId!);
           transaction.oncomplete = () => resolve();
           transaction.onerror = () => reject(transaction.error ?? new Error('Failed to delete credential'));
         });

@@ -8,7 +8,7 @@ import {
 import { logDebug, logError, logInfo } from './logger';
 import {
   downloadPasskeyFromRenterd,
-  getPasskeysFromRenterd,
+  listPasskeysFromRenterd,
   uploadPasskeyDirect,
 } from './sia';
 import {
@@ -189,7 +189,7 @@ async function handleSyncFromSia() {
   const settings = await getSettings();
   if (!settings) return { success: false, error: 'No renterd settings' };
 
-  const files = await getPasskeysFromRenterd(settings);
+  const files = await listPasskeysFromRenterd(settings);
   let synced = 0,
     failed = 0;
 
