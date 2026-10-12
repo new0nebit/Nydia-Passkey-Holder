@@ -106,6 +106,18 @@ function updateButtonContent(button: HTMLButtonElement, iconSvg: string, label: 
   button.appendChild(create('span', [], label));
 }
 
+function getAlertHost(): HTMLElement | null {
+  const root = document.getElementById('root');
+  if (!root) return null;
+
+  const existingHost = root.querySelector(':scope > .alert-stack');
+  if (existingHost instanceof HTMLElement) return existingHost;
+
+  const host = create('div', ['alert-stack']);
+  root.prepend(host);
+  return host;
+}
+
 function notify(type: NotificationType, title: string, message: string): void {
   const iconMap: Record<NotificationType, string> = {
     success: icons.check,
@@ -125,8 +137,18 @@ function notify(type: NotificationType, title: string, message: string): void {
   content.append(alertTitle, alertDescription);
   alert.appendChild(content);
 
-  const root = document.getElementById('root');
-  root?.prepend(alert);
+  const alertHost = getAlertHost();
+  if (!alertHost) return;
+
+  const firstNonSuccessAlert = type === 'success'
+    ? Array.from(alertHost.children).find((child) => !child.classList.contains('alert-success'))
+    : null;
+
+  if (firstNonSuccessAlert) {
+    alertHost.insertBefore(alert, firstNonSuccessAlert);
+  } else {
+    alertHost.append(alert);
+  }
   setTimeout(() => alert.remove(), 3_000);
 }
 
