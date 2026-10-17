@@ -8,7 +8,6 @@ import {
   getEncryptedRecord,
   openSecret,
   savePrivateKey,
-  updateCredentialCounter,
 } from './store';
 import type { SecretPayload } from './store';
 import {
@@ -443,7 +442,6 @@ export async function handleGetAssertion(
 
   logDebug('[Authenticator] Loaded private key', {
     alg: secretPayload.publicKeyAlgorithm,
-    counter: secretPayload.counter,
   });
 
   // Form authenticatorData
@@ -451,9 +449,7 @@ export async function handleGetAssertion(
   logDebug('[Authenticator] Computed rpIdHash (hex)', bufferToHex(rpIdHash));
 
   const flags = new Uint8Array([0x05]); // UP=1 (User Present), UV=1 (User Verified)
-  const signCount = new Uint8Array(4);
-  const dataView = new DataView(signCount.buffer);
-  dataView.setUint32(0, secretPayload.counter + 1, false); // Big-endian
+  const signCount = new Uint8Array(4); // signCounter always 0 (no increment on assertion)
 
   const authenticatorData = new Uint8Array(rpIdHash.length + flags.length + signCount.length);
 
@@ -532,9 +528,6 @@ export async function handleGetAssertion(
   }
 
   logDebug('[Authenticator] Signature (base64url)', base64UrlEncode(signature));
-
-  // Update credential counter
-  await updateCredentialCounter(selectedUniqueId);
 
   // Construct the response
   const response: AssertionResponse = {
