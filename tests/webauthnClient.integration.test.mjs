@@ -94,8 +94,16 @@ try {
 assert.equal(typeof listener, 'function');
 
 // Stand-ins for the browser's WebAuthn interfaces, so prototype checks have
-// something to compare against.
-class PublicKeyCredential {}
+// something to compare against. Like the browser's own method, toJSON() on
+// the prototype only works for credentials the browser created; on any other
+// object it throws, as Chrome does with "Illegal invocation".
+const browserCreated = new WeakSet();
+class PublicKeyCredential {
+  toJSON() {
+    if (!browserCreated.has(this)) throw new TypeError('Illegal invocation');
+    return {};
+  }
+}
 class AuthenticatorAttestationResponse {}
 class AuthenticatorAssertionResponse {}
 
@@ -206,6 +214,63 @@ test('a created credential exposes the registration data the page reads', { time
   assert.deepEqual(bytesOf(response.getPublicKey()), PUBLIC_KEY_DER);
   assert.equal(response.getPublicKeyAlgorithm(), -7);
   assert.deepEqual([...response.getTransports()], ['internal', 'hybrid']);
+});
+
+// Pages and libraries serialise credentials with toJSON() or JSON.stringify()
+// before posting them to their server (WebAuthn Level 3,
+// PublicKeyCredential.toJSON()). Like the browser's, the result must follow
+// the credential's current buffers, not the bytes it was created with.
+function assertFollowsBuffer(credential, expected) {
+  const clientData = new Uint8Array(credential.response.clientDataJSON);
+  clientData[0] ^= 1;
+  const changed = b64(clientData);
+  assert.notEqual(changed, expected.response.clientDataJSON);
+  assert.equal(credential.toJSON().response.clientDataJSON, changed);
+  assert.equal(JSON.parse(JSON.stringify(credential)).response.clientDataJSON, changed);
+}
+test('a created credential serialises to RegistrationResponseJSON', { timeout: 2000 }, async () => {
+  const { navigator } = frontend('confirm');
+  const credential = await navigator.credentials.create(requestOptions('create'));
+  const expected = {
+    id: b64(RAW_ID),
+    rawId: b64(RAW_ID),
+    type: 'public-key',
+    authenticatorAttachment: 'platform',
+    clientExtensionResults: { credProps: { rk: true } },
+    response: {
+      clientDataJSON: b64(CLIENT_DATA),
+      attestationObject: b64(ATTESTATION_OBJECT),
+      authenticatorData: b64(AUTHENTICATOR_DATA),
+      transports: ['internal', 'hybrid'],
+      publicKey: b64(PUBLIC_KEY_DER),
+      publicKeyAlgorithm: -7,
+    },
+  };
+  assert.deepEqual(JSON.parse(JSON.stringify(credential.toJSON())), expected);
+  assert.deepEqual(JSON.parse(JSON.stringify(credential)), expected);
+  assertFollowsBuffer(credential, expected);
+});
+
+test('an assertion serialises to AuthenticationResponseJSON', { timeout: 2000 }, async () => {
+  const { navigator } = frontend('confirm');
+  const credential = await navigator.credentials.get(requestOptions('get'));
+  const expected = {
+    id: b64(RAW_ID),
+    rawId: b64(RAW_ID),
+    type: 'public-key',
+    authenticatorAttachment: 'platform',
+    // Matches getClientExtensionResults(), which reports credProps for both operations.
+    clientExtensionResults: { credProps: { rk: true } },
+    response: {
+      clientDataJSON: b64(CLIENT_DATA),
+      authenticatorData: b64(AUTHENTICATOR_DATA),
+      signature: b64(SIGNATURE),
+      userHandle: b64(USER_HANDLE),
+    },
+  };
+  assert.deepEqual(JSON.parse(JSON.stringify(credential.toJSON())), expected);
+  assert.deepEqual(JSON.parse(JSON.stringify(credential)), expected);
+  assertFollowsBuffer(credential, expected);
 });
 
 test('an assertion exposes the sign-in data the page reads', { timeout: 2000 }, async () => {

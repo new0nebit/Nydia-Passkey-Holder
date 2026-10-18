@@ -126,17 +126,66 @@ import { toDomException } from './utils/domError';
     return assertionResponse as unknown as AuthenticatorAssertionResponse;
   };
 
+  // RegistrationResponseJSON / AuthenticationResponseJSON response member
+  // (WebAuthn Level 3, PublicKeyCredential.toJSON()). Like the browser's own
+  // method it reads the response's current buffers and getters when called,
+  // so it reflects any change the page made to them.
+  type SerializableResponse = {
+    clientDataJSON: ArrayBuffer;
+    attestationObject?: ArrayBuffer;
+    authenticatorData?: ArrayBuffer;
+    signature?: ArrayBuffer;
+    userHandle?: ArrayBuffer | null;
+    getAuthenticatorData?: () => ArrayBuffer;
+    getTransports?: () => string[];
+    getPublicKey?: () => ArrayBuffer | null;
+    getPublicKeyAlgorithm?: () => number;
+  };
+  const toResponseJSON = (response: SerializableResponse): Record<string, unknown> => {
+    if (response.attestationObject) {
+      const authenticatorData = response.getAuthenticatorData?.();
+      const publicKey = response.getPublicKey?.();
+      return {
+        clientDataJSON: toBase64url(response.clientDataJSON),
+        attestationObject: toBase64url(response.attestationObject),
+        ...(authenticatorData ? { authenticatorData: toBase64url(authenticatorData) } : {}),
+        transports: response.getTransports?.() ?? [],
+        ...(publicKey ? { publicKey: toBase64url(publicKey) } : {}),
+        publicKeyAlgorithm: response.getPublicKeyAlgorithm?.(),
+      };
+    }
+    return {
+      clientDataJSON: toBase64url(response.clientDataJSON),
+      ...(response.authenticatorData ? { authenticatorData: toBase64url(response.authenticatorData) } : {}),
+      ...(response.signature ? { signature: toBase64url(response.signature) } : {}),
+      ...(response.userHandle ? { userHandle: toBase64url(response.userHandle) } : {}),
+    };
+  };
+
   // Create a PublicKeyCredential object with correct prototype chain
   const asPublicKeyCredential = (rawCredential: Record<string, unknown>): PublicKeyCredential => {
+    const rawResponse = rawCredential.response as Record<string, unknown>;
+    // Return resident key capability
+    const getClientExtensionResults = () => ({ credProps: { rk: true } });
     const credential: Record<string, unknown> = {
       id: rawCredential.id,
       rawId: toArrayBuffer(rawCredential.rawId as string),
-      response: asAuthenticatorResponse(rawCredential.response as Record<string, unknown>),
+      response: asAuthenticatorResponse(rawResponse),
       type: rawCredential.type ?? 'public-key',
       authenticatorAttachment: 'platform',
-      // Return resident key capability
-      getClientExtensionResults: () => ({ credProps: { rk: true } }),
+      getClientExtensionResults,
+      // The prototype's native toJSON() only accepts credentials the browser
+      // created and throws on this object, which also breaks JSON.stringify().
+      toJSON: () => ({
+        id: credential.id,
+        rawId: toBase64url(credential.rawId as ArrayBuffer),
+        type: credential.type,
+        authenticatorAttachment: credential.authenticatorAttachment,
+        clientExtensionResults: getClientExtensionResults(),
+        response: toResponseJSON(credential.response as SerializableResponse),
+      }),
     };
+
     Object.setPrototypeOf(credential, PublicKeyCredential.prototype);
     return credential as unknown as PublicKeyCredential;
   };
