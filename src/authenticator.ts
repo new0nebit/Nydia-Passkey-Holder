@@ -20,6 +20,7 @@ import {
 } from './types';
 import { base64UrlDecode, base64UrlEncode } from './utils/base64url';
 import { toArrayBuffer } from './utils/buffer';
+import { rawToDer } from './utils/der';
 
 type AttestationCborMap = CBORValue;
 
@@ -60,50 +61,6 @@ function createClientDataJSON(
   };
   const clientDataJSON = new TextEncoder().encode(JSON.stringify(clientData));
   return clientDataJSON.buffer;
-}
-
-// Convert raw ECDSA signature to DER format.
-function rawToDer(rawSignature: ArrayBuffer): ArrayBuffer {
-  const raw = new Uint8Array(rawSignature);
-  if (raw.length !== 64) {
-    throw new Error('Invalid raw signature length');
-  }
-
-  const r = raw.slice(0, 32);
-  const s = raw.slice(32, 64);
-
-  // Prepend zero if the high bit is set (value >= 0x80)
-  const prependZeroIfNeeded = (buffer: Uint8Array): Uint8Array => {
-    if (buffer[0] & 0x80) {
-      const extendedBuffer = new Uint8Array(buffer.length + 1);
-      extendedBuffer[0] = 0x00;
-      extendedBuffer.set(buffer, 1);
-      return extendedBuffer;
-    }
-    return buffer;
-  };
-
-  const rDer = prependZeroIfNeeded(r);
-  const sDer = prependZeroIfNeeded(s);
-
-  const rLen = rDer.length;
-  const sLen = sDer.length;
-
-  const totalLen = rLen + sLen + 4;
-  const derSignature = new Uint8Array(totalLen + 2);
-
-  let offset = 0;
-  derSignature[offset++] = 0x30;
-  derSignature[offset++] = totalLen;
-  derSignature[offset++] = 0x02;
-  derSignature[offset++] = rLen;
-  derSignature.set(rDer, offset);
-  offset += rLen;
-  derSignature[offset++] = 0x02;
-  derSignature[offset++] = sLen;
-  derSignature.set(sDer, offset);
-
-  return derSignature.buffer;
 }
 
 // Chooses a signing algorithm
@@ -502,7 +459,7 @@ export async function handleGetAssertion(
     logDebug('[Authenticator] Signature length after DER conversion', signatureBytes.length);
     logDebug('[Authenticator] Signature (DER hex)', bufferToHex(signatureBytes));
 
-    // Check if signature is DER-encoded
+    // Log whether the signature starts with the DER SEQUENCE tag.
     const firstByte = signatureBytes[0];
     logDebug('[Authenticator] First byte of ECDSA signature (hex)', firstByte.toString(16));
 
