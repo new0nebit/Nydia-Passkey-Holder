@@ -28,7 +28,7 @@
     "dev:chrome": "webpack --watch --mode development --env target=chrome",
     "dev:firefox": "webpack --watch --mode development --env target=firefox",
     "lint": "eslint 'src/**/*.{js,ts}'",
-    "test": "tsc src/utils/domError.ts --ignoreConfig --outDir .test-build --module es2022 --target es2022 --skipLibCheck && node --test tests/*.test.mjs",
+    "test": "tsc -p tests/tsconfig.json && node --test tests/*.test.mjs",
     "type-check": "tsc --noEmit",
     "check": "npm-run-all --continue-on-error lint type-check",
     "analyze": "webpack --mode production --env analyze"
@@ -51,5 +51,8 @@
     "webpack": "^5.112.0",
     "webpack-bundle-analyzer": "^5.4.0",
     "webpack-cli": "^6.0.1"
+  },
+  "dependencies": {
+    "tldts": "^7.4.18"
   }
 }

@@ -1,0 +1,20 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
+    "outDir": "../.test-build",
+    "rootDir": "../src",
+    "paths": {
+      "browser-api": ["../src/browser-api/index.ts"]
+    }
+  },
+  "include": [
+    "../src/background.ts",
+    "../src/utils/domError.ts",
+    "../src/utils/rpId.ts",
+    "../src/dispatcher.ts",
+    "../src/injector.ts"
+  ]
+}

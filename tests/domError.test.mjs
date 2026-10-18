@@ -8,7 +8,7 @@ import {
   serializeError,
   sanitizeDomErrorName,
   toDomException,
-} from '../.test-build/domError.js';
+} from '../.test-build/utils/domError.js';
 
 test('serializeError keeps the name of a DOMException', () => {
   assert.deepEqual(

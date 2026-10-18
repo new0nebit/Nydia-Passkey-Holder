@@ -60,18 +60,31 @@ class WebAuthnInterceptor {
     }
 
     try {
-      const normalizedOptions = this.withOrigin(options);
       logDebug(
         `[Dispatcher] Options for PublicKeyCredential${type === 'create' ? 'Creation' : 'Request'}Options`,
-        normalizedOptions,
+        options,
       );
 
-      const rpId = this.getRpIdFromOptions(normalizedOptions, type);
+      const rpId = this.getRpIdFromOptions(options, type);
+      if (type === 'create') {
+        const response = (await browser.runtime.sendMessage({
+          type: 'validateRpId',
+          rpId,
+        })) as { valid?: boolean; error?: string; errorName?: string };
+
+        if (response?.error) {
+          throw rebuildBackgroundError(response);
+        }
+        if (!response?.valid) {
+          throw new Error('Unable to validate rpId');
+        }
+      }
+
       let accounts: Account[] | undefined;
 
       // If operation is 'get', fetch available credentials
       if (type === 'get') {
-        const requestOptions = normalizedOptions;
+        const requestOptions = options;
         const allowCredentialIds = this.getAllowCredentialIds(requestOptions);
         accounts = await this.getAvailableCredentials(rpId, allowCredentialIds);
         logDebug('[Dispatcher] Available accounts', accounts.map((account) => ({
@@ -89,7 +102,7 @@ class WebAuthnInterceptor {
 
       const userName =
         type === 'create'
-          ? (normalizedOptions as CreationOptions).publicKey.user.name
+          ? (options as CreationOptions).publicKey.user.name
           : '';
 
       const payload: PopupInitPayload = {
@@ -102,8 +115,8 @@ class WebAuthnInterceptor {
       // Display the custom popup for user interaction
       const onAction = (selectedUniqueId?: string): Promise<unknown> => {
         return type === 'create'
-          ? this.handlePasskeySave(normalizedOptions as CreationOptions)
-          : this.handleGetAssertion(normalizedOptions, selectedUniqueId);
+          ? this.handlePasskeySave(options as CreationOptions)
+          : this.handleGetAssertion(options, selectedUniqueId);
       };
 
       const result = await showPopup(payload, onAction);
@@ -133,23 +146,18 @@ class WebAuthnInterceptor {
     }
   }
 
-  private withOrigin<T extends CreationOptions | RequestOptions>(options: T): T {
-    return {
-      ...options,
-      origin: window.location.origin,
-    };
-  }
-
   // Extracts the RP ID from the options.
   private getRpIdFromOptions(
     options: CreationOptions | RequestOptions,
     type: WebAuthnOperationType,
   ): string {
     if (type === 'create') {
-      return (options as CreationOptions).publicKey.rp?.id || window.location.hostname;
+      const requestedRpId = (options as CreationOptions).publicKey.rp?.id;
+      return requestedRpId === undefined ? window.location.hostname : requestedRpId;
     }
-    const { publicKey } = options;
-    return ('rpId' in publicKey ? publicKey.rpId : undefined) || window.location.hostname;
+    const requestedRpId =
+      'rpId' in options.publicKey ? options.publicKey.rpId : undefined;
+    return requestedRpId === undefined ? window.location.hostname : requestedRpId;
   }
 
   async handlePasskeySave(options: CreationOptions): Promise<unknown> {
@@ -197,14 +205,15 @@ class WebAuthnInterceptor {
         type: 'getAvailableCredentials',
         rpId,
         allowCredentialIds,
-      })) as Account[] | { error?: string };
+      })) as Account[] | { error?: string; errorName?: string };
       if (Array.isArray(response)) return response;
       if (response?.error) {
-        throw new Error(response.error);
+        throw rebuildBackgroundError(response);
       }
       return [];
     } catch (error: unknown) {
       if (error instanceof Error && error.message === 'rootKeyMissing') throw error;
+      if (error instanceof DOMException && error.name === 'SecurityError') throw error;
       logDebug('[Dispatcher] Error getting available credentials', error);
       return [];
     }

@@ -29,6 +29,7 @@ import {
 } from './types';
 import { toArrayBuffer } from './utils/buffer';
 import { serializeError } from './utils/domError';
+import { canonicalRpIdForOrigin, getWebAuthnSenderOrigin } from './utils/rpId';
 
 // RSA wrapping key pair for secure key transfer
 let wrappingKeyPair: CryptoKeyPair | null = null;
@@ -66,9 +67,12 @@ function normalizeDescriptor(
   }));
 }
 
-function toCreationOptions(options: SerializedCreationOptions): CredentialCreationOptions {
+function toCreationOptions(
+  options: SerializedCreationOptions,
+  senderOrigin: string,
+  rpId: string,
+): CredentialCreationOptions {
   const { publicKey } = options;
-  const { origin } = options;
 
   if (!publicKey?.challenge) {
     throw new Error('Invalid options: challenge is required');
@@ -83,12 +87,6 @@ function toCreationOptions(options: SerializedCreationOptions): CredentialCreati
   if (!publicKey.rp?.name) {
     throw new Error('Invalid options: rp.name is required');
   }
-
-  if (!origin) {
-    throw new Error('Invalid options: origin is required');
-  }
-
-  const rpId = publicKey.rp.id ?? new URL(origin).hostname;
 
   const rpEntity: PublicKeyCredentialRpEntity = {
     id: rpId,
@@ -107,23 +105,20 @@ function toCreationOptions(options: SerializedCreationOptions): CredentialCreati
       pubKeyCredParams: publicKey.pubKeyCredParams,
       excludeCredentials: normalizeDescriptor(publicKey.excludeCredentials),
     },
-    origin,
+    origin: senderOrigin,
   };
 }
 
-function toGetAssertionOptions(options: SerializedRequestOptions): GetAssertionOptions {
+function toGetAssertionOptions(
+  options: SerializedRequestOptions,
+  senderOrigin: string,
+  rpId: string,
+): GetAssertionOptions {
   const { publicKey } = options;
-  const { origin } = options;
 
   if (!publicKey?.challenge) {
     throw new Error('Invalid options: challenge is required');
   }
-
-  if (!origin) {
-    throw new Error('Invalid options: origin is required');
-  }
-
-  const rpId = publicKey.rpId ?? new URL(origin).hostname;
 
   return {
     publicKey: {
@@ -132,7 +127,7 @@ function toGetAssertionOptions(options: SerializedRequestOptions): GetAssertionO
       challenge: toArrayBuffer(publicKey.challenge),
       allowCredentials: normalizeDescriptor(publicKey.allowCredentials),
     },
-    origin,
+    origin: senderOrigin,
   };
 }
 
@@ -144,6 +139,37 @@ function isBackgroundMessage(message: unknown): message is BackgroundMessage {
     'type' in message &&
     typeof message.type === 'string'
   );
+}
+
+function securityError(
+  operation: string,
+  reason: string,
+): { error: string; errorName: 'SecurityError' } {
+  // Both reasons are fixed literals; no caller-controlled value is logged.
+  logDebug(`[Background] ${operation} blocked: ${reason}`);
+  return { error: reason, errorName: 'SecurityError' };
+}
+
+// Check the sender before inspecting operation-specific request fields.
+function requireTrustedSender(
+  operation: string,
+  sender: unknown,
+): { senderOrigin: string } | ReturnType<typeof securityError> {
+  const senderOrigin = getWebAuthnSenderOrigin(sender);
+  if (!senderOrigin) return securityError(operation, 'Untrusted WebAuthn sender');
+  return { senderOrigin };
+}
+
+// Call after the sender and request shape have been checked, before any store
+// access. An absent RP ID defaults to the canonical caller domain.
+function resolveRpId(
+  operation: string,
+  requestedRpId: unknown,
+  senderOrigin: string,
+): { rpId: string } | ReturnType<typeof securityError> {
+  const rpId = canonicalRpIdForOrigin(requestedRpId, senderOrigin);
+  if (!rpId) return securityError(operation, 'rpId is not valid for the requesting origin');
+  return { rpId };
 }
 
 // Handles the upload of a single passkey to renterd
@@ -279,43 +305,88 @@ async function handleStoreWrappedKey(wrappedKey: unknown) {
 }
 
 // Router
-async function router(message: BackgroundMessage): Promise<unknown> {
+async function router(message: BackgroundMessage, sender: unknown): Promise<unknown> {
   try {
     switch (message.type) {
-      case 'createCredential':
+      case 'validateRpId': {
+        const caller = requireTrustedSender('validateRpId', sender);
+        if ('error' in caller) return caller;
+
+        const context = resolveRpId('validateRpId', message.rpId, caller.senderOrigin);
+        if ('error' in context) return context;
+        return { valid: true };
+      }
+
+      case 'createCredential': {
+        const caller = requireTrustedSender('createCredential', sender);
+        if ('error' in caller) return caller;
+
+        if (
+          !message.options?.publicKey ||
+          typeof message.options.publicKey !== 'object' ||
+          Array.isArray(message.options.publicKey)
+        ) {
+          logDebug('[Background] createCredential blocked: Invalid options: publicKey is required');
+          return { error: 'Invalid options: publicKey is required' };
+        }
+
+        const options = message.options as SerializedCreationOptions;
+        const context = resolveRpId('createCredential', options.publicKey.rp?.id, caller.senderOrigin);
+        if ('error' in context) return context;
+
         if (!(await getRootKeyIfAvailable())) {
           logDebug('[Background] createCredential blocked: rootKeyMissing');
           return { error: 'rootKeyMissing' };
         }
-        if (!message.options?.publicKey) {
-          logDebug('[Background] createCredential blocked: Invalid options: publicKey is required');
-          return { error: 'Invalid options: publicKey is required' };
-        }
-        return await createCredential(toCreationOptions(message.options as SerializedCreationOptions));
+        return await createCredential(
+          toCreationOptions(options, caller.senderOrigin, context.rpId),
+        );
+      }
 
-      case 'handleGetAssertion':
-        if (!message.options?.publicKey) {
+      case 'handleGetAssertion': {
+        const caller = requireTrustedSender('handleGetAssertion', sender);
+        if ('error' in caller) return caller;
+
+        if (
+          !message.options?.publicKey ||
+          typeof message.options.publicKey !== 'object' ||
+          Array.isArray(message.options.publicKey)
+        ) {
           logDebug('[Background] handleGetAssertion blocked: Invalid options: publicKey is required');
           return { error: 'Invalid options: publicKey is required' };
         }
+
+        const options = message.options;
+        const requestedRpId = 'rpId' in options.publicKey ? options.publicKey.rpId : undefined;
+        const context = resolveRpId('handleGetAssertion', requestedRpId, caller.senderOrigin);
+        if ('error' in context) return context;
+
         if (!message.selectedUniqueId) {
           logDebug('[Background] handleGetAssertion blocked: Missing selectedUniqueId');
           return { error: 'Missing selectedUniqueId' };
         }
         return await handleGetAssertion(
-          toGetAssertionOptions(message.options as SerializedRequestOptions),
+          toGetAssertionOptions(options, caller.senderOrigin, context.rpId),
           message.selectedUniqueId,
         );
+      }
 
-      case 'getAvailableCredentials':
+      case 'getAvailableCredentials': {
+        const caller = requireTrustedSender('getAvailableCredentials', sender);
+        if ('error' in caller) return caller;
+
+        const context = resolveRpId('getAvailableCredentials', message.rpId, caller.senderOrigin);
+        if ('error' in context) return context;
+
         if (!(await getRootKeyIfAvailable())) {
           logDebug('[Background] getAvailableCredentials blocked: rootKeyMissing');
           return { error: 'rootKeyMissing' };
         }
         return await getAvailableCredentials(
-          message.rpId!,
+          context.rpId,
           Array.isArray(message.allowCredentialIds) ? message.allowCredentialIds : undefined,
         );
+      }
 
       case 'uploadToSia':
         if (!message.uniqueId) return { error: 'Missing uniqueId' };
@@ -355,12 +426,12 @@ async function router(message: BackgroundMessage): Promise<unknown> {
 
 // Bootstrap
 logInfo('[Background] bootstrap');
-browser.runtime.onMessage.addListener((message: unknown) => {
+browser.runtime.onMessage.addListener((message: unknown, sender: unknown) => {
   if (!isBackgroundMessage(message)) {
     logError('[Background] Invalid message format', message);
     return Promise.resolve({ error: 'Invalid message format' });
   }
-  return router(message);
+  return router(message, sender);
 });
 
 getRootKeyIfAvailable().catch(logError);
