@@ -24,6 +24,6 @@ export type BrowserAPI = {
 };
 
 const resolvedBrowser: BrowserAPI =
-  (firefoxAPI as BrowserAPI) ?? (chromeAPI as BrowserAPI);
+  (firefoxAPI as BrowserAPI) ?? chromeAPI;
 
 export default resolvedBrowser;

@@ -328,7 +328,7 @@ export class OnboardingController {
     const entropy = new Uint8Array(16);
     crypto.getRandomValues(entropy);
 
-    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', entropy as BufferSource));
+    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', entropy));
     const checksum4 = (hash[0] & 0xf0) >> 4;
 
     const hi = this.u64(entropy, 0);
@@ -404,7 +404,7 @@ export class OnboardingController {
       l >>= 8n;
     }
 
-    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', entropy as BufferSource));
+    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', entropy));
     const expected = (hash[0] & 0xf0) >> 4;
     this.secureCleanup(hash);
 

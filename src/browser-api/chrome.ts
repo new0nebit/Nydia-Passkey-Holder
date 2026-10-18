@@ -36,8 +36,8 @@ const runtime = {
       chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const result = listener(message, sender, sendResponse);
 
-        if (result && typeof (result as Promise<unknown>).then === 'function') {
-          (result as Promise<unknown>)
+        if (result && typeof result.then === 'function') {
+          result
             .then((response) => {
               sendResponse(response);
             })
@@ -59,7 +59,7 @@ const runtime = {
       chrome.runtime.getBackgroundPage((backgroundPage) => {
         if (chrome.runtime.lastError) {
           logError('[Chrome] Error getting background page', chrome.runtime.lastError);
-          reject(chrome.runtime.lastError);
+          reject(new Error(chrome.runtime.lastError.message ?? 'Error getting background page'));
           return;
         }
         if (!backgroundPage) {

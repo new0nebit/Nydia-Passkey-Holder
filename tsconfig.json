@@ -8,7 +8,7 @@
     "forceConsistentCasingInFileNames": true,
     "lib": ["es2022", "dom"],
     "moduleResolution": "bundler",
-    "baseUrl": ".",
+    "types": ["chrome", "firefox-webext-browser"],
     "paths": {
       "browser-api": ["./src/browser-api/index.ts"]
     }
