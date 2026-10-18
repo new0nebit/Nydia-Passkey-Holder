@@ -4,6 +4,10 @@ import { toDomException } from './utils/domError';
   // Abort early if the Credential Management API is unavailable
   if (!('credentials' in navigator)) return;
 
+  // A page can load this web-accessible script without the dispatcher,
+  // so the injector needs its own secure-context guard.
+  if (!window.isSecureContext) return;
+
   console.info('[Injector] WebAuthn injector initialized');
 
   // Convert base64url-encoded string to ArrayBuffer

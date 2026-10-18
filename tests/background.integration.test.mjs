@@ -242,6 +242,77 @@ test('background listener blocks invalid RP IDs before storage and authenticator
   assert.equal(calls.available.length, 0);
 });
 
+// Every message below names an RP ID that matches its own caller host, so the
+// scheme is the only thing left to refuse them on.
+function webAuthnRoutes(host) {
+  return [
+    { type: 'validateRpId', rpId: host },
+    {
+      type: 'createCredential',
+      options: {
+        publicKey: {
+          rp: { id: host, name: 'Local' },
+          user: { id: 'AQ', name: 'person@example.com' },
+          challenge: 'AQ',
+          pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+        },
+      },
+    },
+    {
+      type: 'handleGetAssertion',
+      options: { publicKey: { challenge: 'AQ', rpId: host } },
+      selectedUniqueId: 'credential-1',
+    },
+    { type: 'getAvailableCredentials', rpId: host },
+  ];
+}
+
+test('background listener refuses a plain HTTP sender on every WebAuthn route', async () => {
+  resetCalls();
+
+  for (const message of webAuthnRoutes('site.example')) {
+    const response = await messageListener(message, sender('http://site.example'));
+    assert.equal(response.errorName, 'SecurityError');
+    assert.equal(response.error, 'Untrusted WebAuthn sender');
+  }
+
+  assert.equal(rootKeyCalls, 0);
+  assert.equal(calls.create.length, 0);
+  assert.equal(calls.get.length, 0);
+  assert.equal(calls.available.length, 0);
+});
+
+// Nydia permits plain HTTP for the exact localhost hostname so local
+// development relying parties keep working.
+test('background listener accepts a plain HTTP localhost sender', async () => {
+  resetCalls();
+
+  assert.deepEqual(
+    await messageListener({ type: 'validateRpId', rpId: 'localhost' }, sender('http://localhost:8080')),
+    { valid: true },
+  );
+
+  await messageListener(
+    {
+      type: 'createCredential',
+      options: {
+        publicKey: {
+          rp: { id: 'localhost', name: 'Local' },
+          user: { id: 'AQ', name: 'person@example.com' },
+          challenge: 'AQ',
+          pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+        },
+      },
+    },
+    sender('http://localhost:8080'),
+  );
+
+  assert.equal(calls.create.length, 1);
+  assert.equal(calls.create[0].origin, 'http://localhost:8080');
+  assert.equal(calls.create[0].publicKey.rp.id, 'localhost');
+  assert.equal(calls.create[0].publicKey.rpId, 'localhost');
+});
+
 // Exercise the real listener with structured-clone-compatible malformed input.
 // Neither sender rejection nor shape rejection may probe local keys/settings.
 for (const operation of ['createCredential', 'handleGetAssertion']) {

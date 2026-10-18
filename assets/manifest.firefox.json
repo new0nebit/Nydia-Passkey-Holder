@@ -14,7 +14,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://*/*", "http://*/*"],
+      "matches": ["https://*/*", "http://localhost/*"],
       "js": ["dispatcher.js"],
       "run_at": "document_start",
       "all_frames": false
@@ -23,7 +23,7 @@
   "web_accessible_resources": [
     {
       "resources": ["injector.js", "icon.png", "popup.html", "popup.js", "popup.css"],
-      "matches": ["https://*/*", "http://*/*"]
+      "matches": ["https://*/*", "http://localhost/*"]
     }
   ],
   "action": {
