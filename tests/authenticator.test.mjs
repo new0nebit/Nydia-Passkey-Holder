@@ -271,6 +271,32 @@ test('excludeCredentials: refuses an existing credential and allows an unknown o
   assert.equal(writes.length, writesBefore + 1, 'an unknown excluded credential blocked registration');
 });
 
+// A credential is scoped to the RP it was created for. Without allowCredentials
+// the request names no credential, so the authenticator itself must refuse a
+// record that belongs to another RP instead of signing for the requested one.
+test('get: refuses a credential created for another RP', async () => {
+  const challenge = randomChallenge();
+  await authenticator.createCredential({
+    publicKey: {
+      rp: { id: 'foreign.example', name: 'Foreign' },
+      rpId: 'foreign.example',
+      user: { id: new Uint8Array([7]), name: 'person@foreign.example', displayName: 'Person' },
+      challenge,
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+    },
+    origin: 'https://foreign.example',
+  });
+  const foreignUniqueId = writes.at(-1);
+
+  await assert.rejects(
+    authenticator.handleGetAssertion(
+      { publicKey: { challenge: randomChallenge(), rpId: RP_ID }, origin: ORIGIN },
+      foreignUniqueId,
+    ),
+    (error) => error instanceof DOMException && error.name === 'NotAllowedError',
+  );
+});
+
 test('allowCredentials accepts a listed credential and refuses an unlisted one', async () => {
   const listed = await register(-7);
   const other = await register(-7);

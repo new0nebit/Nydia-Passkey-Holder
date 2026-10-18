@@ -397,6 +397,14 @@ export async function handleGetAssertion(
   // Load private key, algorithm, and secret payload
   const [privateKey, algorithm, secretPayload] = await loadPrivateKey(selectedUniqueId);
 
+  // A credential is scoped to its RP. The uniqueId is derived from the RP ID and
+  // the credential ID, so recomputing it for this request proves the record
+  // belongs to the requested RP; without allowCredentials nothing else does.
+  const credentialIdBytes = toArrayBuffer(secretPayload.credentialId);
+  if ((await createUniqueId(rpId, base64UrlEncode(credentialIdBytes))) !== selectedUniqueId) {
+    throw new DOMException('Selected credential does not belong to this relying party', 'NotAllowedError');
+  }
+
   logDebug('[Authenticator] Loaded private key', {
     alg: secretPayload.publicKeyAlgorithm,
   });
