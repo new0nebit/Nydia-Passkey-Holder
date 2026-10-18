@@ -82,7 +82,9 @@ function chooseAlgorithm(
       return new Ed25519();
     }
   }
-  throw new Error('No supported algorithm found');
+  // WebAuthn defines NotSupportedError for a request whose pubKeyCredParams
+  // lists no algorithm the authenticator can create; it is returned to the RP.
+  throw new DOMException('None of the requested algorithms is supported', 'NotSupportedError');
 }
 
 // Load private key from stored credential and prepare it for signing

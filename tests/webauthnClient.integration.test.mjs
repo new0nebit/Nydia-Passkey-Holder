@@ -54,6 +54,32 @@ const getResponse = {
   },
 };
 
+// The real authenticator, with storage mocked and logging silenced, for requests
+// that must fail inside it rather than in a fixed response.
+const authenticatorPath = fileURLToPath(new URL('../.test-build/authenticator.js', import.meta.url));
+let realAuthenticator;
+{
+  const storeMock = {
+    async createUniqueId(rpId, credentialId) { return `${rpId}:${credentialId}`; },
+    async getEncryptedRecord() { return null; },
+    async savePrivateKey() { throw new Error('nothing may be stored'); },
+  };
+  const load = Module._load;
+  try {
+    Module._load = function(request, parent, isMain) {
+      if (parent?.filename === authenticatorPath) {
+        if (request === './store') return storeMock;
+        if (request === './logger') return quiet;
+      }
+      return load.call(this, request, parent, isMain);
+    };
+    realAuthenticator = require(authenticatorPath);
+  } finally {
+    Module._load = load;
+  }
+}
+let useRealAuthenticator = false;
+
 let listener;
 let authenticatorCalls = 0;
 const browser = {
@@ -66,7 +92,11 @@ const browser = {
   },
 };
 const authenticator = {
-  async createCredential() { authenticatorCalls++; return structuredClone(createResponse); },
+  async createCredential(options) {
+    authenticatorCalls++;
+    if (useRealAuthenticator) return realAuthenticator.createCredential(options);
+    return structuredClone(createResponse);
+  },
   async handleGetAssertion() { authenticatorCalls++; return structuredClone(getResponse); },
   async getAvailableCredentials() {
     return [{ uniqueId: 'credential-1', username: 'alice', creationTime: 1 }];
@@ -107,7 +137,8 @@ class PublicKeyCredential {
 class AuthenticatorAttestationResponse {}
 class AuthenticatorAssertionResponse {}
 
-function frontend(popup) {
+function frontend(popup, { real = false } = {}) {
+  useRealAuthenticator = real;
   const listeners = new Set();
   const nativeCalls = [];
   const window = {
@@ -141,8 +172,18 @@ function frontend(popup) {
     './logger': quiet,
     './utils/domError': helpers,
     './popup/pageIcon': { async readCachedPageIcon() { return null; } },
+    // Mirrors the popup host: an error result or a plain Error stays in the
+    // open window, a WebAuthn DOMException ends the request for the page.
     './popup/shadowHost': { async showPopup(_payload, onAction) {
-      return popup === 'cancel' ? 'closed' : onAction('credential-1');
+      if (popup === 'cancel') return 'closed';
+      try {
+        const result = await onAction('credential-1');
+        if (result && typeof result === 'object' && 'error' in result) return new Promise(() => {});
+        return result;
+      } catch (error) {
+        if (helpers.isWebAuthnDomException(error)) throw error;
+        return new Promise(() => {});
+      }
     } },
   };
   for (const entry of ['dispatcher', 'injector']) {
@@ -214,6 +255,20 @@ test('a created credential exposes the registration data the page reads', { time
   assert.deepEqual(bytesOf(response.getPublicKey()), PUBLIC_KEY_DER);
   assert.equal(response.getPublicKeyAlgorithm(), -7);
   assert.deepEqual([...response.getTransports()], ['internal', 'hybrid']);
+});
+
+// A request listing only algorithms Nydia cannot create must end for the page
+// with NotSupportedError, not leave the confirmation window waiting.
+test('unsupported algorithms reach the page as NotSupportedError', { timeout: 2000 }, async () => {
+  const { navigator, nativeCalls } = frontend('confirm', { real: true });
+  const options = requestOptions('create');
+  options.publicKey.pubKeyCredParams = [{ type: 'public-key', alg: -35 }];
+  await assert.rejects(navigator.credentials.create(options), (error) => {
+    assert.ok(error instanceof DOMException);
+    assert.equal(error.name, 'NotSupportedError');
+    return true;
+  });
+  assert.equal(nativeCalls.length, 0);
 });
 
 // Pages and libraries serialise credentials with toJSON() or JSON.stringify()

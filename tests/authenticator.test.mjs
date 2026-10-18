@@ -271,6 +271,15 @@ test('excludeCredentials: refuses an existing credential and allows an unknown o
   assert.equal(writes.length, writesBefore + 1, 'an unknown excluded credential blocked registration');
 });
 
+test('a request with no supported algorithm is refused with NotSupportedError and writes nothing', async () => {
+  const writesBefore = writes.length;
+  await assert.rejects(
+    create(-35),
+    (error) => error instanceof DOMException && error.name === 'NotSupportedError',
+  );
+  assert.equal(writes.length, writesBefore, 'a refused registration wrote to the store');
+});
+
 // A credential is scoped to the RP it was created for. Without allowCredentials
 // the request names no credential, so the authenticator itself must refuse a
 // record that belongs to another RP instead of signing for the requested one.
