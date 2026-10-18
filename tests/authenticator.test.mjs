@@ -118,7 +118,98 @@ async function register(alg) {
   });
   const expectedKeyType = new Map([[-7, 'ec'], [-257, 'rsa'], [-8, 'ed25519']]).get(alg);
   assert.equal(publicKey.asymmetricKeyType, expectedKeyType, 'SPKI must use the requested algorithm');
+  assertAttestationObject(created, alg, publicKey);
   return { uniqueId: writes.at(-1), credentialId: created.rawId, publicKey };
+}
+
+// Minimal CBOR decoder for the attestation and COSE fixtures, independent of
+// src/cbor.ts. Unsupported CBOR types and length encodings throw.
+function decodeCbor(bytes, start = 0) {
+  let offset = start;
+  const head = bytes[offset++];
+  const major = head >> 5;
+  const info = head & 0x1f;
+  let length = info;
+  if (info === 24) length = bytes[offset++];
+  else if (info === 25) { length = bytes.readUInt16BE(offset); offset += 2; }
+  else if (info === 26) { length = bytes.readUInt32BE(offset); offset += 4; }
+  else if (info > 26) throw new Error(`unsupported CBOR length encoding ${info}`);
+
+  switch (major) {
+    case 0: return { value: length, offset };
+    case 1: return { value: -1 - length, offset };
+    case 2: return { value: bytes.subarray(offset, offset + length), offset: offset + length };
+    case 3: return { value: bytes.subarray(offset, offset + length).toString('utf8'), offset: offset + length };
+    case 4: {
+      const items = [];
+      for (let i = 0; i < length; i++) ({ value: items[i], offset } = decodeCbor(bytes, offset));
+      return { value: items, offset };
+    }
+    case 5: {
+      const map = new Map();
+      for (let i = 0; i < length; i++) {
+        let key, value;
+        ({ value: key, offset } = decodeCbor(bytes, offset));
+        ({ value, offset } = decodeCbor(bytes, offset));
+        map.set(key, value);
+      }
+      return { value: map, offset };
+    }
+    default: throw new Error(`unsupported CBOR major type ${major}`);
+  }
+}
+
+function coseToJwk(cose, alg) {
+  const b64 = (key) => Buffer.from(cose.get(key)).toString('base64url');
+  assert.equal(cose.get(3), alg, 'COSE key must carry the requested algorithm');
+  switch (alg) {
+    case -7:
+      assert.equal(cose.get(1), 2, 'ES256 COSE key type must be EC2');
+      assert.equal(cose.get(-1), 1, 'ES256 COSE curve must be P-256');
+      return { kty: 'EC', crv: 'P-256', x: b64(-2), y: b64(-3) };
+    case -257:
+      assert.equal(cose.get(1), 3, 'RS256 COSE key type must be RSA');
+      return { kty: 'RSA', n: b64(-1), e: b64(-2) };
+    case -8:
+      assert.equal(cose.get(1), 1, 'Ed25519 COSE key type must be OKP');
+      assert.equal(cose.get(-1), 6, 'Ed25519 COSE curve must be Ed25519');
+      return { kty: 'OKP', crv: 'Ed25519', x: b64(-2) };
+    default:
+      throw new Error(`unexpected algorithm ${alg}`);
+  }
+}
+
+// The relying party reads the attestation object, not publicKeyDER. Decode it
+// independently and check that it carries the same key and authenticator data.
+function assertAttestationObject(created, alg, publicKey) {
+  const attestationBytes = Buffer.from(created.response.attestationObject, 'base64url');
+  const { value: attestation, offset: end } = decodeCbor(attestationBytes);
+  assert.equal(end, attestationBytes.length, 'attestationObject must have no trailing bytes');
+  assert.deepEqual([...attestation.keys()], ['fmt', 'attStmt', 'authData']);
+  assert.equal(attestation.get('fmt'), 'none');
+  assert.equal(attestation.get('attStmt').size, 0, 'a "none" attestation has an empty attStmt');
+
+  const authData = attestation.get('authData');
+  assert.deepEqual(
+    authData,
+    Buffer.from(created.response.authenticatorData, 'base64url'),
+    'authData inside attestationObject must equal the returned authenticatorData',
+  );
+  assert.equal(authData[32] & 0x40, 0x40, 'attested credential data flag must be set');
+  assert.equal(authData[32] & 0x80, 0, 'no extension data is included');
+
+  const credentialIdLength = authData.readUInt16BE(53);
+  const credentialId = authData.subarray(55, 55 + credentialIdLength);
+  assert.equal(credentialId.toString('base64url'), created.rawId, 'credentialId must match rawId');
+
+  const { value: cose, offset: coseEnd } = decodeCbor(authData, 55 + credentialIdLength);
+  assert.equal(coseEnd, authData.length, 'the COSE key must end authData');
+  const coseKey = createPublicKey({ key: coseToJwk(cose, alg), format: 'jwk' });
+  assert.deepEqual(
+    coseKey.export({ type: 'spki', format: 'der' }),
+    publicKey.export({ type: 'spki', format: 'der' }),
+    'the COSE key must be the same public key as publicKeyDER',
+  );
 }
 
 async function sign(uniqueId, allowCredentials) {
