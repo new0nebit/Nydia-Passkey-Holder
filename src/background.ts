@@ -28,6 +28,7 @@ import {
   SerializedRequestOptions,
 } from './types';
 import { toArrayBuffer } from './utils/buffer';
+import { serializeError } from './utils/domError';
 
 // RSA wrapping key pair for secure key transfer
 let wrappingKeyPair: CryptoKeyPair | null = null;
@@ -345,8 +346,10 @@ async function router(message: BackgroundMessage): Promise<unknown> {
       logError('[Background] router error', error);
     }
 
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    return { error: errorMessage };
+    // Keep the DOMException identity (e.g. InvalidStateError for
+    // excludeCredentials) so upper layers can hand the RP the spec error.
+    const { message, name } = serializeError(error);
+    return { error: message, errorName: name };
   }
 }
 

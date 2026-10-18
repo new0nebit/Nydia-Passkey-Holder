@@ -1,6 +1,7 @@
 import browser from 'browser-api';
 
 import { logDebug } from './logger';
+import { serializeError, toDomException } from './utils/domError';
 import { showPopup } from './popup/shadowHost';
 import { PopupInitPayload } from './popup/messages';
 import {
@@ -15,6 +16,16 @@ import {
 type CreationOptions = SerializedCreationOptions;
 type RequestOptions = SerializedRequestOptions;
 type SerializedWebAuthnResponse = AttestationResponse | AssertionResponse;
+
+// Rebuild the error a background handler reported. DOMExceptions keep their
+// (whitelisted) name so the RP ultimately sees the spec error; everything else
+// stays a plain Error — internal signals like `rootKeyMissing` rely on the
+// message being matched verbatim.
+function rebuildBackgroundError(response: { error?: string; errorName?: string }): Error {
+  return response.errorName !== undefined
+    ? toDomException(response.error, response.errorName)
+    : new Error(response.error);
+}
 
 const isTopFrame = (() => {
   try {
@@ -146,9 +157,9 @@ class WebAuthnInterceptor {
     const response = (await browser.runtime.sendMessage({
       type: 'createCredential',
       options,
-    })) as { error?: string };
+    })) as { error?: string; errorName?: string };
     if (response.error) {
-      throw new Error(response.error);
+      throw rebuildBackgroundError(response);
     }
     return response;
   }
@@ -159,9 +170,9 @@ class WebAuthnInterceptor {
       type: 'handleGetAssertion',
       options,
       selectedUniqueId,
-    })) as { error?: string };
+    })) as { error?: string; errorName?: string };
     if (response.error) {
-      throw new Error(response.error);
+      throw rebuildBackgroundError(response);
     }
     return response;
   }
@@ -248,9 +259,12 @@ function initDispatcher(): void {
           window.postMessage({ type: `${messageType}-response`, response }, '*');
         }
       } catch (error: unknown) {
-        const messageText = error instanceof Error ? error.message : String(error);
+        const { message: messageText, name: errorName } = serializeError(error);
         logDebug(`[Dispatcher] Error handling ${messageType}`, error);
-        window.postMessage({ type: `${messageType}-error`, error: messageText }, '*');
+        window.postMessage(
+          { type: `${messageType}-error`, error: messageText, errorName },
+          '*',
+        );
       }
     })();
   });
