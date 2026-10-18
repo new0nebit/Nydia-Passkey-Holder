@@ -1,111 +1,33 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import Module from 'node:module';
-import { fileURLToPath } from 'node:url';
-import { runInNewContext } from 'node:vm';
 import { test } from 'node:test';
+import { startBackground, startPage } from './helpers/webauthn.mjs';
 
-const require = createRequire(import.meta.url);
-const backgroundPath = fileURLToPath(new URL('../.test-build/background.js', import.meta.url));
-const helpers = require('../.test-build/utils/domError.js');
-const sources = Object.fromEntries(['dispatcher', 'injector'].map((entry) => [
-  entry, readFileSync(new URL(`../.test-build/${entry}.js`, import.meta.url), 'utf8'),
-]));
-const ORIGIN = 'https://login.example.com';
+// The authenticator rejects with a chosen DOMException; the real background,
+// dispatcher and injector must preserve its name and message for the page.
 const MESSAGE = 'A passkey for this account already exists.';
-const quiet = { logDebug() {}, logError() {}, logInfo() {} };
-let listener;
 let outcome;
 let authenticatorCalls = 0;
-const browser = {
-  runtime: {
-    getURL(name) { return `chrome-extension://audit/${name}`; },
-    onMessage: { addListener(value) { listener = value; } },
-    async sendMessage(message) {
-      return listener(message, { origin: ORIGIN, frameId: 0, tab: {} });
-    },
-  },
-};
-const authenticator = {
+const browser = startBackground({
   async createCredential() { authenticatorCalls++; throw new DOMException(MESSAGE, outcome); },
   async handleGetAssertion() { authenticatorCalls++; throw new DOMException(MESSAGE, outcome); },
   async getAvailableCredentials() {
     return [{ uniqueId: 'credential-1', username: 'alice', creationTime: 1 }];
   },
-};
-const boundaries = new Map([
-  ['browser-api', browser],
-  ['./authenticator', authenticator],
-  ['./logger', quiet],
-  ['./store', { async getRootKeyIfAvailable() { return true; } }],
-  ['./sia', {}],
-]);
-// The real background listener runs here; no error serialization is reproduced.
-const originalLoad = Module._load;
-try {
-  Module._load = function(request, parent, isMain) {
-    if (parent?.filename === backgroundPath && boundaries.has(request)) {
-      return boundaries.get(request);
-    }
-    return originalLoad.call(this, request, parent, isMain);
-  };
-  require(backgroundPath);
-} finally {
-  Module._load = originalLoad;
-}
-assert.equal(typeof listener, 'function');
+});
 
 function frontend() {
-  const listeners = new Set();
-  const posts = [];
   const metrics = { nativeCalls: 0, popupCalls: 0 };
-  const window = {
-    isSecureContext: true,
-    location: { origin: ORIGIN, hostname: 'login.example.com' },
-    addEventListener(type, callback) { if (type === 'message') listeners.add(callback); },
-    removeEventListener(type, callback) { if (type === 'message') listeners.delete(callback); },
-    postMessage(data) {
-      const copied = structuredClone(data);
-      posts.push(copied);
-      queueMicrotask(() => {
-        for (const callback of [...listeners]) {
-          callback({ source: window, origin: ORIGIN, data: copied });
-        }
-      });
+  const { navigator, posts } = startPage({
+    browser,
+    native: {
+      async create() { metrics.nativeCalls++; return null; },
+      async get() { metrics.nativeCalls++; return null; },
     },
-  };
-  window.self = window;
-  window.top = window;
-  const navigator = { credentials: {
-    async create() { metrics.nativeCalls++; return null; },
-    async get() { metrics.nativeCalls++; return null; },
-  } };
-  const document = {
-    createElement() { return { remove() {} }; },
-    head: { appendChild() {} },
-  };
-  const dependencies = {
-    'browser-api': browser,
-    './logger': quiet,
-    './utils/domError': helpers,
-    './popup/pageIcon': { async readCachedPageIcon() { return null; } },
-    './popup/shadowHost': { async showPopup(_payload, onAction) {
+    async showPopup(_payload, onAction) {
       metrics.popupCalls++;
       return onAction('credential-1');
-    } },
-  };
-  for (const entry of ['dispatcher', 'injector']) {
-    runInNewContext(sources[entry], {
-      exports: {}, window, navigator, document,
-      DOMException, Error, URL, ArrayBuffer, Uint8Array,
-      atob, btoa, console: { info() {}, debug() {} },
-      require(name) {
-        assert.ok(name in dependencies, `unexpected frontend import: ${name}`);
-        return dependencies[name];
-      },
-    }, { filename: `${entry}.js` });
-  }
+    },
+  });
   return { navigator, metrics, posts };
 }
 
