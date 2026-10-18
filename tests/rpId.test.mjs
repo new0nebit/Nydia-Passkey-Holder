@@ -133,6 +133,40 @@ test('refuses a sender that reports no origin', () => {
   );
 });
 
+// Allow HTTP only for exact localhost, excluding subdomains and IP addresses.
+test('accepts plain http only for localhost', () => {
+  assert.equal(
+    getWebAuthnSenderOrigin({ origin: 'http://localhost:8080', frameId: 0, tab: {} }),
+    'http://localhost:8080',
+  );
+  assert.equal(
+    getWebAuthnSenderOrigin({ origin: 'http://localhost', frameId: 0, tab: {} }),
+    'http://localhost',
+  );
+
+  for (const origin of [
+    'http://site.example',
+    'http://intranet.example:9000',
+    'http://localhost.example',
+    'http://sub.localhost',
+    'http://127.0.0.1:8080',
+    'http://[::1]:8080',
+  ]) {
+    assert.equal(
+      getWebAuthnSenderOrigin({ origin, frameId: 0, tab: {} }),
+      null,
+      `expected ${origin} to be refused`,
+    );
+  }
+});
+
+// localhost works as the default or explicit RP ID without a registrable parent.
+test('resolves the RP ID for a localhost caller', () => {
+  assert.equal(canonicalRpIdForOrigin(undefined, 'http://localhost:8080'), 'localhost');
+  assert.equal(canonicalRpIdForOrigin('localhost', 'http://localhost:8080'), 'localhost');
+  assert.equal(canonicalRpIdForOrigin('example.com', 'http://localhost:8080'), null);
+});
+
 test('keeps the port and rejects non-web schemes', () => {
   assert.equal(
     getWebAuthnSenderOrigin({

@@ -283,6 +283,10 @@ function initDispatcher(): void {
 
 if (!isTopFrame) {
   logDebug('[Dispatcher] Iframe detected; skipping WebAuthn injection');
+} else if (!window.isSecureContext) {
+  // Leave WebAuthn untouched when the browser reports an insecure context.
+  // Background independently validates the sender origin.
+  logDebug('[Dispatcher] Insecure context; skipping WebAuthn injection');
 } else {
   initDispatcher();
 }

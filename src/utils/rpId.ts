@@ -57,7 +57,7 @@ function parseDomainString(value: unknown): string | null {
 
 // Only a web origin has an effective domain that may name an RP. Extension and
 // other non-web schemes carry a host too, and it must never become an RP ID.
-// (Rejecting plain http: is a separate concern and deliberately not done here.)
+// Origin trust is checked separately in getWebAuthnSenderOrigin().
 function effectiveDomainFromOrigin(origin: string): string | null {
   let url: URL;
   try {
@@ -67,6 +67,15 @@ function effectiveDomainFromOrigin(origin: string): string | null {
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
   return parseDomainString(url.hostname);
+}
+
+// WebAuthn requires a secure context. Enforce that here, from the sender
+// origin, without trusting a page-provided isSecureContext value: allow HTTPS;
+// allow HTTP only for exact localhost. RP ID validation separately rejects IP
+// addresses.
+function isTrustworthyWebAuthnOrigin(url: URL): boolean {
+  if (url.protocol === 'https:') return true;
+  return url.protocol === 'http:' && url.hostname === 'localhost';
 }
 
 export function getWebAuthnSenderOrigin(sender: unknown): string | null {
@@ -81,16 +90,15 @@ export function getWebAuthnSenderOrigin(sender: unknown): string | null {
   // WebAuthn interception is currently installed only in the top frame.
   if (!value.tab || value.frameId !== 0) return null;
 
-  // Both supported engines report the sender origin (Chrome 80+, Firefox 126+
-  // via strict_min_version), so sender.url is never consulted: it would name a
-  // host for sandboxed documents, whose origin is opaque and reported as
-  // "null". Anything else is refused rather than guessed.
+  // Use sender.origin, never sender.url: a sandboxed document's URL can name a
+  // host while its origin is opaque ("null"). Firefox reports sender.origin
+  // from 126, hence strict_min_version in its manifest.
   const { origin } = value;
   if (typeof origin !== 'string' || !origin || origin === 'null') return null;
 
   try {
     const url = new URL(origin);
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    if (!isTrustworthyWebAuthnOrigin(url)) return null;
     return url.origin;
   } catch {
     return null;
