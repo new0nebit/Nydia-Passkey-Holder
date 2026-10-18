@@ -65,7 +65,6 @@ export interface StoredCredential {
   privateKey: string;
   userHandle: string;
   publicKeyAlgorithm: number;
-  counter: number;
   userName?: string;
   creationTime: number;
   isSynced: boolean;

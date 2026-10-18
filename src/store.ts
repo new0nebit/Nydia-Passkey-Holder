@@ -1,5 +1,4 @@
-import { logDebug, logError, logWarn } from './logger';
-import { uploadPasskeyDirect } from './sia';
+import { logDebug, logError } from './logger';
 import {
   BackgroundMessage,
   CredentialMetadata,
@@ -12,9 +11,6 @@ import { base64UrlDecode, base64UrlEncode } from './utils/base64url';
 
 // Web Crypto API
 const subtle = crypto.subtle;
-
-// Simple per-credential mutex to avoid race conditions during counter updates
-const counterLocks: Map<string, Promise<void>> = new Map();
 
 // IndexedDB
 const DB_NAME = 'NydiaDB';
@@ -146,7 +142,6 @@ async function encryptCredential(credential: StoredCredential): Promise<Encrypte
       userHandle: credential.userHandle,
       publicKeyAlgorithm: credential.publicKeyAlgorithm,
       privateKey: credential.privateKey,
-      counter: credential.counter,
     }),
   ]);
 
@@ -164,7 +159,6 @@ export type SecretPayload = {
   userHandle: string;
   publicKeyAlgorithm: number;
   privateKey: string;
-  counter: number;
 };
 
 export async function openSecret(uniqueId: string): Promise<SecretPayload> {
@@ -293,40 +287,6 @@ export async function saveEncryptedRecord(record: EncryptedRecord): Promise<void
   });
 }
 
-// counter + Sia sync
-export function updateCredentialCounter(uniqueId: string): Promise<void> {
-  const pendingLock = counterLocks.get(uniqueId) ?? Promise.resolve();
-
-  const lockPromise = pendingLock.then(async () => {
-    const record = await getEncryptedRecord(uniqueId);
-    if (!record) throw new Error('Credential not found');
-
-    const secretKey = await deriveSecretKey();
-    const secretPayload = await openEnvelope<SecretPayload>(secretKey, record.secret);
-    secretPayload.counter++;
-
-    const { credentialId, userHandle, publicKeyAlgorithm, privateKey, counter } = secretPayload;
-    const newSecret = await sealEnvelope(secretKey, { credentialId, userHandle, publicKeyAlgorithm, privateKey, counter });
-    const updated: EncryptedRecord = { ...record, secret: newSecret, isSynced: false };
-    await saveEncryptedRecord(updated);
-
-    uploadPasskeyDirect(updated).then(async (result) => {
-      if (result.success) {
-        updated.isSynced = true;
-        await saveEncryptedRecord(updated);
-      } else {
-        logWarn('[Store] counter sync Sia', result.error);
-      }
-    }).catch((error) => {
-      logError('[Store] Error in async upload', error);
-    });
-  });
-
-  counterLocks.set(uniqueId, lockPromise);
-  void lockPromise.finally(() => counterLocks.delete(uniqueId));
-  return lockPromise;
-}
-
 // Utility Functions
 export async function createUniqueId(rpId: string, credentialId: string): Promise<string> {
   const hashInput = new TextEncoder().encode(`${rpId}:${credentialId}`);
@@ -353,7 +313,6 @@ export async function savePrivateKey(
     privateKey: base64UrlEncode(new Uint8Array(pkcs8)),
     userHandle: base64UrlEncode(userId),
     publicKeyAlgorithm,
-    counter: 0,
     userName,
     creationTime: Date.now(),
     isSynced: false,
@@ -367,11 +326,6 @@ export async function savePrivateKey(
 export async function handleMessageInBackground(message: BackgroundMessage): Promise<unknown> {
   try {
     switch (message.type) {
-      case 'updateCredentialCounter':
-        if (typeof message.uniqueId !== 'string') return { error: 'Invalid uniqueId' };
-        await updateCredentialCounter(message.uniqueId);
-        return { status: 'ok' };
-
       case 'getAllCredentialsMetadata':
         return getAllCredentialsMetadata();
 
