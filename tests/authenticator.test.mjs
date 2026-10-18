@@ -15,6 +15,15 @@ const require = createRequire(import.meta.url);
 const records = new Map();
 const writes = [];
 
+// Metadata the store holds for discovery: three credentials of this RP, one of
+// them without a user name, and one of another RP that must never be offered.
+const METADATA = [
+  { uniqueId: 'example.com:alice', rpId: 'example.com', userName: 'alice', creationTime: 1, isSynced: true },
+  { uniqueId: 'other.example:mallory', rpId: 'other.example', userName: 'mallory', creationTime: 2, isSynced: true },
+  { uniqueId: 'example.com:anonymous', rpId: 'example.com', creationTime: 3, isSynced: false },
+  { uniqueId: 'example.com:bob', rpId: 'example.com', userName: 'bob', creationTime: 4, isSynced: true },
+];
+
 function encode(bytes) {
   return Buffer.from(bytes).toString('base64url');
 }
@@ -27,10 +36,10 @@ const storeMock = {
     return records.get(uniqueId) ?? null;
   },
   async getAllCredentialsMetadata() {
-    return [];
+    return METADATA;
   },
-  async getCredentialsMetadataByUniqueIds() {
-    return [];
+  async getCredentialsMetadataByUniqueIds(uniqueIds) {
+    return METADATA.filter((metadata) => uniqueIds.includes(metadata.uniqueId));
   },
   async savePrivateKey(credentialId, rpId, privateKey, userId, publicKeyAlgorithm) {
     const pkcs8 = await crypto.subtle.exportKey('pkcs8', privateKey);
@@ -132,19 +141,13 @@ function decodeCbor(bytes, start = 0) {
   let length = info;
   if (info === 24) length = bytes[offset++];
   else if (info === 25) { length = bytes.readUInt16BE(offset); offset += 2; }
-  else if (info === 26) { length = bytes.readUInt32BE(offset); offset += 4; }
-  else if (info > 26) throw new Error(`unsupported CBOR length encoding ${info}`);
+  else if (info > 25) throw new Error(`unsupported CBOR length encoding ${info}`);
 
   switch (major) {
     case 0: return { value: length, offset };
     case 1: return { value: -1 - length, offset };
     case 2: return { value: bytes.subarray(offset, offset + length), offset: offset + length };
     case 3: return { value: bytes.subarray(offset, offset + length).toString('utf8'), offset: offset + length };
-    case 4: {
-      const items = [];
-      for (let i = 0; i < length; i++) ({ value: items[i], offset } = decodeCbor(bytes, offset));
-      return { value: items, offset };
-    }
     case 5: {
       const map = new Map();
       for (let i = 0; i < length; i++) {
@@ -315,4 +318,21 @@ test('allowCredentials accepts a listed credential and refuses an unlisted one',
     sign(listed.uniqueId, [{ type: 'public-key', id: credentialIdBytes(other.credentialId) }]),
     (error) => error instanceof DOMException && error.name === 'NotAllowedError',
   );
+});
+
+test('discovery offers only the credentials of the requested RP', async () => {
+  assert.deepEqual(await authenticator.getAvailableCredentials(RP_ID), [
+    { username: 'alice', uniqueId: 'example.com:alice', creationTime: 1 },
+    { username: 'Unknown user', uniqueId: 'example.com:anonymous', creationTime: 3 },
+    { username: 'bob', uniqueId: 'example.com:bob', creationTime: 4 },
+  ]);
+});
+
+test('discovery with allowCredentials offers only listed credentials of the requested RP', async () => {
+  // 'bob' is not listed; 'mallory' exists, but only for another RP, so it
+  // resolves to no record here.
+  assert.deepEqual(await authenticator.getAvailableCredentials(RP_ID, ['alice', 'anonymous', 'mallory']), [
+    { username: 'alice', uniqueId: 'example.com:alice', creationTime: 1 },
+    { username: 'Unknown user', uniqueId: 'example.com:anonymous', creationTime: 3 },
+  ]);
 });

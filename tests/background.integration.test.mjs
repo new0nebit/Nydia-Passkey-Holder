@@ -349,3 +349,41 @@ test('background listener keeps the DOMException name of an authenticator error'
     authenticatorMock.createCredential = createCredential;
   }
 });
+
+// A valid request from a trusted page still needs a vault that is set up:
+// without a root key, creation and discovery stop before the authenticator.
+test('background listener stops valid requests without a root key', async () => {
+  const getRootKeyIfAvailable = storeMock.getRootKeyIfAvailable;
+  storeMock.getRootKeyIfAvailable = async () => {
+    rootKeyCalls += 1;
+    return null;
+  };
+  try {
+    resetCalls();
+    const create = await messageListener(
+      {
+        type: 'createCredential',
+        options: {
+          publicKey: {
+            rp: { id: 'example.com', name: 'Example' },
+            user: { id: 'AQ', name: 'person@example.com' },
+            challenge: 'AQ',
+            pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+          },
+        },
+      },
+      sender('https://login.example.com'),
+    );
+    const available = await messageListener(
+      { type: 'getAvailableCredentials', rpId: 'example.com' },
+      sender('https://login.example.com'),
+    );
+
+    assert.deepEqual(create, { error: 'rootKeyMissing' });
+    assert.deepEqual(available, { error: 'rootKeyMissing' });
+    assert.equal(rootKeyCalls, 2);
+    assert.deepEqual(calls, { create: [], get: [], available: [] });
+  } finally {
+    storeMock.getRootKeyIfAvailable = getRootKeyIfAvailable;
+  }
+});
