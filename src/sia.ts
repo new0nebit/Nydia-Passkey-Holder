@@ -12,7 +12,7 @@ function isValidEnvelope(value: unknown): value is EncryptedEnvelope {
     value &&
       typeof value === 'object' &&
       'iv' in value &&
-      typeof (value as { iv: unknown }).iv === 'string' &&
+      typeof value.iv === 'string' &&
       'data' in value &&
       typeof (value as { data: unknown }).data === 'string',
   );
@@ -23,7 +23,7 @@ function isValidEncryptedRecord(value: unknown): value is EncryptedRecord {
     value &&
       typeof value === 'object' &&
       'uniqueId' in value &&
-      typeof (value as { uniqueId: unknown }).uniqueId === 'string' &&
+      typeof value.uniqueId === 'string' &&
       'metadata' in value &&
       isValidEnvelope((value as { metadata: unknown }).metadata) &&
       'secret' in value &&
@@ -156,7 +156,7 @@ export async function downloadPasskeyFromRenterd(
   logDebug('[Sia] Downloaded encrypted passkey data', {
     uniqueId:
       record && typeof record === 'object' && 'uniqueId' in record
-        ? (record as { uniqueId: unknown }).uniqueId
+        ? record.uniqueId
         : undefined,
   });
 

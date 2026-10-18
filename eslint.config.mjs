@@ -3,9 +3,8 @@ import pluginJs from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 /** @type {import('eslint').Linter.Config[]} */
-export default [
+export default tseslint.config(
   {
-    files: ["**/*.{js,mjs,cjs,ts}"],
     ignores: ["node_modules/", "extension/", "dist/"]
   },
   {
@@ -17,22 +16,29 @@ export default [
     }
   },
   pluginJs.configs.recommended,
-  ...tseslint.configs.recommended,
+  ...tseslint.configs.recommendedTypeChecked,
+  {
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
   {
     files: ["**/*.ts"],
-    languageOptions: {
-      parser: tseslint.parser
-    },
-    plugins: {
-      "@typescript-eslint": tseslint.plugin
-    },
     rules: {
       "@typescript-eslint/no-explicit-any": "warn",
       "no-console": ["warn", { allow: ["warn", "error", "debug", "info"] }],
       "@typescript-eslint/no-unused-vars": ["error", {
         "vars": "all",
         "args": "all"
-      }]
+      }],
+      "@typescript-eslint/switch-exhaustiveness-check": "error"
     }
+  },
+  {
+    files: ["**/*.{js,mjs,cjs}"],
+    ...tseslint.configs.disableTypeChecked,
   }
-];
+);

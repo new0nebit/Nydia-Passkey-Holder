@@ -60,7 +60,7 @@ class WebAuthnInterceptor {
 
       // If operation is 'get', fetch available credentials
       if (type === 'get') {
-        const requestOptions = normalizedOptions as RequestOptions;
+        const requestOptions = normalizedOptions;
         const allowCredentialIds = this.getAllowCredentialIds(requestOptions);
         accounts = await this.getAvailableCredentials(rpId, allowCredentialIds);
         logDebug('[Dispatcher] Available accounts', accounts.map((account) => ({
@@ -92,7 +92,7 @@ class WebAuthnInterceptor {
       const onAction = (selectedUniqueId?: string): Promise<unknown> => {
         return type === 'create'
           ? this.handlePasskeySave(normalizedOptions as CreationOptions)
-          : this.handleGetAssertion(normalizedOptions as RequestOptions, selectedUniqueId);
+          : this.handleGetAssertion(normalizedOptions, selectedUniqueId);
       };
 
       const result = await showPopup(payload, onAction);
@@ -137,7 +137,8 @@ class WebAuthnInterceptor {
     if (type === 'create') {
       return (options as CreationOptions).publicKey.rp?.id || window.location.hostname;
     }
-    return (options as RequestOptions).publicKey.rpId || window.location.hostname;
+    const { publicKey } = options;
+    return ('rpId' in publicKey ? publicKey.rpId : undefined) || window.location.hostname;
   }
 
   async handlePasskeySave(options: CreationOptions): Promise<unknown> {
@@ -215,7 +216,7 @@ function initDispatcher(): void {
 
   const messageHandlers = new Map<string, Handler>([
     ['webauthn-create', (options) => interceptor.interceptCreate(options as CreationOptions)],
-    ['webauthn-get', (options) => interceptor.interceptGet(options as RequestOptions)],
+    ['webauthn-get', (options) => interceptor.interceptGet(options)],
   ]);
 
   // Listens for messages from the injector.js script and handles them.
