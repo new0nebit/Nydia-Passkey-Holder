@@ -65,7 +65,7 @@ export default (env, argv) => {
       ],
     },
     resolve: {
-      extensions: ['.ts', '.css'],
+      extensions: ['.ts', '.js', '.css'],
       // Use browser-specific API implementation based on target
       alias: {
         'browser-api': path.resolve(

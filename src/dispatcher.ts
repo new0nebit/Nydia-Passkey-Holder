@@ -1,6 +1,7 @@
 import browser from 'browser-api';
 
 import { logDebug } from './logger';
+import { serializeError, toDomException } from './utils/domError';
 import { showPopup } from './popup/shadowHost';
 import { PopupInitPayload } from './popup/messages';
 import {
@@ -15,6 +16,16 @@ import {
 type CreationOptions = SerializedCreationOptions;
 type RequestOptions = SerializedRequestOptions;
 type SerializedWebAuthnResponse = AttestationResponse | AssertionResponse;
+
+// Rebuild the error a background handler reported. DOMExceptions keep their
+// (whitelisted) name so the RP ultimately sees the spec error; everything else
+// stays a plain Error — internal signals like `rootKeyMissing` rely on the
+// message being matched verbatim.
+function rebuildBackgroundError(response: { error?: string; errorName?: string }): Error {
+  return response.errorName !== undefined
+    ? toDomException(response.error, response.errorName)
+    : new Error(response.error);
+}
 
 const isTopFrame = (() => {
   try {
@@ -49,18 +60,31 @@ class WebAuthnInterceptor {
     }
 
     try {
-      const normalizedOptions = this.withOrigin(options);
       logDebug(
         `[Dispatcher] Options for PublicKeyCredential${type === 'create' ? 'Creation' : 'Request'}Options`,
-        normalizedOptions,
+        options,
       );
 
-      const rpId = this.getRpIdFromOptions(normalizedOptions, type);
+      const rpId = this.getRpIdFromOptions(options, type);
+      if (type === 'create') {
+        const response = (await browser.runtime.sendMessage({
+          type: 'validateRpId',
+          rpId,
+        })) as { valid?: boolean; error?: string; errorName?: string };
+
+        if (response?.error) {
+          throw rebuildBackgroundError(response);
+        }
+        if (!response?.valid) {
+          throw new Error('Unable to validate rpId');
+        }
+      }
+
       let accounts: Account[] | undefined;
 
       // If operation is 'get', fetch available credentials
       if (type === 'get') {
-        const requestOptions = normalizedOptions;
+        const requestOptions = options;
         const allowCredentialIds = this.getAllowCredentialIds(requestOptions);
         accounts = await this.getAvailableCredentials(rpId, allowCredentialIds);
         logDebug('[Dispatcher] Available accounts', accounts.map((account) => ({
@@ -78,7 +102,7 @@ class WebAuthnInterceptor {
 
       const userName =
         type === 'create'
-          ? (normalizedOptions as CreationOptions).publicKey.user.name
+          ? (options as CreationOptions).publicKey.user.name
           : '';
 
       const payload: PopupInitPayload = {
@@ -91,8 +115,8 @@ class WebAuthnInterceptor {
       // Display the custom popup for user interaction
       const onAction = (selectedUniqueId?: string): Promise<unknown> => {
         return type === 'create'
-          ? this.handlePasskeySave(normalizedOptions as CreationOptions)
-          : this.handleGetAssertion(normalizedOptions, selectedUniqueId);
+          ? this.handlePasskeySave(options as CreationOptions)
+          : this.handleGetAssertion(options, selectedUniqueId);
       };
 
       const result = await showPopup(payload, onAction);
@@ -122,23 +146,18 @@ class WebAuthnInterceptor {
     }
   }
 
-  private withOrigin<T extends CreationOptions | RequestOptions>(options: T): T {
-    return {
-      ...options,
-      origin: window.location.origin,
-    };
-  }
-
   // Extracts the RP ID from the options.
   private getRpIdFromOptions(
     options: CreationOptions | RequestOptions,
     type: WebAuthnOperationType,
   ): string {
     if (type === 'create') {
-      return (options as CreationOptions).publicKey.rp?.id || window.location.hostname;
+      const requestedRpId = (options as CreationOptions).publicKey.rp?.id;
+      return requestedRpId === undefined ? window.location.hostname : requestedRpId;
     }
-    const { publicKey } = options;
-    return ('rpId' in publicKey ? publicKey.rpId : undefined) || window.location.hostname;
+    const requestedRpId =
+      'rpId' in options.publicKey ? options.publicKey.rpId : undefined;
+    return requestedRpId === undefined ? window.location.hostname : requestedRpId;
   }
 
   async handlePasskeySave(options: CreationOptions): Promise<unknown> {
@@ -146,9 +165,9 @@ class WebAuthnInterceptor {
     const response = (await browser.runtime.sendMessage({
       type: 'createCredential',
       options,
-    })) as { error?: string };
+    })) as { error?: string; errorName?: string };
     if (response.error) {
-      throw new Error(response.error);
+      throw rebuildBackgroundError(response);
     }
     return response;
   }
@@ -159,9 +178,9 @@ class WebAuthnInterceptor {
       type: 'handleGetAssertion',
       options,
       selectedUniqueId,
-    })) as { error?: string };
+    })) as { error?: string; errorName?: string };
     if (response.error) {
-      throw new Error(response.error);
+      throw rebuildBackgroundError(response);
     }
     return response;
   }
@@ -186,14 +205,15 @@ class WebAuthnInterceptor {
         type: 'getAvailableCredentials',
         rpId,
         allowCredentialIds,
-      })) as Account[] | { error?: string };
+      })) as Account[] | { error?: string; errorName?: string };
       if (Array.isArray(response)) return response;
       if (response?.error) {
-        throw new Error(response.error);
+        throw rebuildBackgroundError(response);
       }
       return [];
     } catch (error: unknown) {
       if (error instanceof Error && error.message === 'rootKeyMissing') throw error;
+      if (error instanceof DOMException && error.name === 'SecurityError') throw error;
       logDebug('[Dispatcher] Error getting available credentials', error);
       return [];
     }
@@ -248,9 +268,12 @@ function initDispatcher(): void {
           window.postMessage({ type: `${messageType}-response`, response }, '*');
         }
       } catch (error: unknown) {
-        const messageText = error instanceof Error ? error.message : String(error);
+        const { message: messageText, name: errorName } = serializeError(error);
         logDebug(`[Dispatcher] Error handling ${messageType}`, error);
-        window.postMessage({ type: `${messageType}-error`, error: messageText }, '*');
+        window.postMessage(
+          { type: `${messageType}-error`, error: messageText, errorName },
+          '*',
+        );
       }
     })();
   });

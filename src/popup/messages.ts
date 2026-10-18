@@ -36,6 +36,7 @@ export type PopupErrorMessage = {
   type: typeof PopupMessage.Error;
   sessionId: string;
   message: string;
+  terminal?: boolean;
 };
 
 export type PopupResizeMessage = {

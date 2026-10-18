@@ -4,6 +4,11 @@
   "version": "1.0.0",
   "description": "Passkey storage on the Sia network. Hold your passkeys locally with decentralized backup.",
   "author": "Oleh N.",
+  "browser_specific_settings": {
+    "gecko": {
+      "strict_min_version": "126.0"
+    }
+  },
   "background": {
     "scripts": ["background.js"]
   },

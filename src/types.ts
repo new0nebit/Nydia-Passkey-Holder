@@ -26,7 +26,6 @@ export interface SerializedCreationOptions {
     pubKeyCredParams: PublicKeyCredentialParameters[];
     excludeCredentials?: SerializedCredentialDescriptor[];
   };
-  origin?: string;
 }
 
 export interface SerializedRequestOptions {
@@ -35,7 +34,6 @@ export interface SerializedRequestOptions {
     rpId?: string;
     allowCredentials?: SerializedCredentialDescriptor[];
   };
-  origin?: string;
 }
 
 export type SerializedPublicKeyOptions =
@@ -106,7 +104,7 @@ export interface CredentialMetadata {
 
 export interface BackgroundMessage {
   type: string;
-  options?: SerializedPublicKeyOptions | GetAssertionOptions | CredentialCreationOptions;
+  options?: SerializedPublicKeyOptions;
   rpId?: string;
   allowCredentialIds?: string[];
   selectedUniqueId?: string;
