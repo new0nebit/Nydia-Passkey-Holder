@@ -1,23 +1,12 @@
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
-import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import Module from 'node:module';
-import { fileURLToPath } from 'node:url';
-import { runInNewContext } from 'node:vm';
 import { test } from 'node:test';
+import { domError, loadWithMocks, quiet, startBackground, startPage } from './helpers/webauthn.mjs';
 
-// Runs the real background listener, dispatcher and injector. Only the
-// authenticator and the popup window are replaced: the popup either confirms
-// the request or is cancelled, and the authenticator returns fixed responses.
-const require = createRequire(import.meta.url);
-const backgroundPath = fileURLToPath(new URL('../.test-build/background.js', import.meta.url));
-const helpers = require('../.test-build/utils/domError.js');
-const sources = Object.fromEntries(['dispatcher', 'injector'].map((entry) => [
-  entry, readFileSync(new URL(`../.test-build/${entry}.js`, import.meta.url), 'utf8'),
-]));
-const ORIGIN = 'https://login.example.com';
-const quiet = { logDebug() {}, logError() {}, logInfo() {} };
+// Runs the real background listener, dispatcher and injector. The popup window
+// is replaced: it either confirms the request or is cancelled. The
+// authenticator returns fixed responses, except where a request has to fail
+// inside the real one.
 
 const b64 = (bytes) => Buffer.from(bytes).toString('base64url');
 const bytesOf = (buffer) => [...new Uint8Array(buffer)];
@@ -56,42 +45,17 @@ const getResponse = {
 
 // The real authenticator, with storage mocked and logging silenced, for requests
 // that must fail inside it rather than in a fixed response.
-const authenticatorPath = fileURLToPath(new URL('../.test-build/authenticator.js', import.meta.url));
-let realAuthenticator;
-{
-  const storeMock = {
+const realAuthenticator = loadWithMocks('authenticator.js', {
+  './store': {
     async createUniqueId(rpId, credentialId) { return `${rpId}:${credentialId}`; },
     async getEncryptedRecord() { return null; },
     async savePrivateKey() { throw new Error('nothing may be stored'); },
-  };
-  const load = Module._load;
-  try {
-    Module._load = function(request, parent, isMain) {
-      if (parent?.filename === authenticatorPath) {
-        if (request === './store') return storeMock;
-        if (request === './logger') return quiet;
-      }
-      return load.call(this, request, parent, isMain);
-    };
-    realAuthenticator = require(authenticatorPath);
-  } finally {
-    Module._load = load;
-  }
-}
-let useRealAuthenticator = false;
-
-let listener;
-let authenticatorCalls = 0;
-const browser = {
-  runtime: {
-    getURL(name) { return `chrome-extension://audit/${name}`; },
-    onMessage: { addListener(value) { listener = value; } },
-    async sendMessage(message) {
-      return listener(message, { origin: ORIGIN, frameId: 0, tab: {} });
-    },
   },
-};
-const authenticator = {
+  './logger': quiet,
+});
+let useRealAuthenticator = false;
+let authenticatorCalls = 0;
+const browser = startBackground({
   async createCredential(options) {
     authenticatorCalls++;
     if (useRealAuthenticator) return realAuthenticator.createCredential(options);
@@ -101,103 +65,42 @@ const authenticator = {
   async getAvailableCredentials() {
     return [{ uniqueId: 'credential-1', username: 'alice', creationTime: 1 }];
   },
-};
-const boundaries = new Map([
-  ['browser-api', browser],
-  ['./authenticator', authenticator],
-  ['./logger', quiet],
-  ['./store', { async getRootKeyIfAvailable() { return true; } }],
-  ['./sia', {}],
-]);
-const originalLoad = Module._load;
-try {
-  Module._load = function(request, parent, isMain) {
-    if (parent?.filename === backgroundPath && boundaries.has(request)) {
-      return boundaries.get(request);
-    }
-    return originalLoad.call(this, request, parent, isMain);
-  };
-  require(backgroundPath);
-} finally {
-  Module._load = originalLoad;
-}
-assert.equal(typeof listener, 'function');
+});
 
 // Stand-ins for the browser's WebAuthn interfaces, so prototype checks have
-// something to compare against. Like the browser's own method, toJSON() on
-// the prototype only works for credentials the browser created; on any other
-// object it throws, as Chrome does with "Illegal invocation".
-const browserCreated = new WeakSet();
+// something to compare against. The browser's own toJSON() on the prototype
+// rejects any object it did not create, as Chrome does with "Illegal invocation".
 class PublicKeyCredential {
-  toJSON() {
-    if (!browserCreated.has(this)) throw new TypeError('Illegal invocation');
-    return {};
-  }
+  toJSON() { throw new TypeError('Illegal invocation'); }
 }
 class AuthenticatorAttestationResponse {}
 class AuthenticatorAssertionResponse {}
 
 function frontend(popup, { real = false } = {}) {
   useRealAuthenticator = real;
-  const listeners = new Set();
   const nativeCalls = [];
-  const window = {
-    isSecureContext: true,
-    location: { origin: ORIGIN, hostname: 'login.example.com' },
-    PublicKeyCredential,
-    addEventListener(type, callback) { if (type === 'message') listeners.add(callback); },
-    removeEventListener(type, callback) { if (type === 'message') listeners.delete(callback); },
-    postMessage(data) {
-      const copied = structuredClone(data);
-      queueMicrotask(() => {
-        for (const callback of [...listeners]) {
-          callback({ source: window, origin: ORIGIN, data: copied });
-        }
-      });
-    },
-  };
-  window.self = window;
-  window.top = window;
   const nativeResult = { native: true };
-  const navigator = { credentials: {
-    async create(options) { nativeCalls.push({ operation: 'create', options }); return nativeResult; },
-    async get(options) { nativeCalls.push({ operation: 'get', options }); return nativeResult; },
-  } };
-  const document = {
-    createElement() { return { remove() {} }; },
-    head: { appendChild() {} },
-  };
-  const dependencies = {
-    'browser-api': browser,
-    './logger': quiet,
-    './utils/domError': helpers,
-    './popup/pageIcon': { async readCachedPageIcon() { return null; } },
+  const { navigator, listeners } = startPage({
+    browser,
+    globals: { PublicKeyCredential, AuthenticatorAttestationResponse, AuthenticatorAssertionResponse },
+    native: {
+      async create(options) { nativeCalls.push({ operation: 'create', options }); return nativeResult; },
+      async get(options) { nativeCalls.push({ operation: 'get', options }); return nativeResult; },
+    },
     // Mirrors the popup host: an error result or a plain Error stays in the
     // open window, a WebAuthn DOMException ends the request for the page.
-    './popup/shadowHost': { async showPopup(_payload, onAction) {
+    async showPopup(_payload, onAction) {
       if (popup === 'cancel') return 'closed';
       try {
         const result = await onAction('credential-1');
         if (result && typeof result === 'object' && 'error' in result) return new Promise(() => {});
         return result;
       } catch (error) {
-        if (helpers.isWebAuthnDomException(error)) throw error;
+        if (domError.isWebAuthnDomException(error)) throw error;
         return new Promise(() => {});
       }
-    } },
-  };
-  for (const entry of ['dispatcher', 'injector']) {
-    runInNewContext(sources[entry], {
-      exports: {}, window, navigator, document,
-      PublicKeyCredential, AuthenticatorAttestationResponse, AuthenticatorAssertionResponse,
-      DOMException, Error, URL, ArrayBuffer, Uint8Array,
-      atob, btoa, console: { info() {}, debug() {} },
-      require(name) {
-        assert.ok(name in dependencies, `unexpected frontend import: ${name}`);
-        return dependencies[name];
-      },
-    }, { filename: `${entry}.js` });
-  }
+    },
+  });
   return { navigator, nativeCalls, nativeResult, listeners };
 }
 

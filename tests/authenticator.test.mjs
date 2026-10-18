@@ -41,7 +41,7 @@ const storeMock = {
       userHandle: encode(userId),
       publicKeyAlgorithm,
       privateKey: encode(new Uint8Array(pkcs8)),
-      // A record written before Commit 0 still carries its old counter.
+      // An old record can still carry a non-zero counter; assertions must ignore it.
       counter: 42,
     });
     return uniqueId;
