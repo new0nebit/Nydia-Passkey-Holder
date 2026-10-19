@@ -5,21 +5,42 @@
   "version_name": "1.0.0-beta.2",
   "description": "Passkey storage on the Sia network. Hold your passkeys locally with decentralized backup.",
   "author": "Oleh N.",
+  "permissions": [
+    "storage"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://*/*", "http://localhost/*"],
-      "js": ["dispatcher.js"],
+      "matches": [
+        "https://*/*",
+        "http://localhost/*"
+      ],
+      "js": [
+        "dispatcher.js"
+      ],
       "run_at": "document_start",
       "all_frames": false
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["injector.js", "icon.png", "popup.html", "popup.js", "popup.css"],
-      "matches": ["https://*/*", "http://localhost/*"]
+      "resources": [
+        "injector.js",
+        "icon.png",
+        "popup.html",
+        "popup.js",
+        "popup.css"
+      ],
+      "matches": [
+        "https://*/*",
+        "http://localhost/*"
+      ]
     }
   ],
   "action": {

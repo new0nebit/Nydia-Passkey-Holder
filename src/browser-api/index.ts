@@ -16,11 +16,28 @@ type Runtime = {
     ) => void;
   };
   getURL: (path: string) => string;
+  getManifest: () => { content_scripts?: { matches?: string[] }[]; host_permissions?: string[] };
   getBackgroundPage?: () => Promise<Window>;
 };
 
 export type BrowserAPI = {
   runtime: Runtime;
+  permissions: {
+    request: (permissions: { origins: string[] }) => Promise<boolean>;
+    contains: (permissions: { origins: string[] }) => Promise<boolean>;
+    getAll: () => Promise<{ origins?: string[] }>;
+    remove: (permissions: { origins: string[] }) => Promise<boolean>;
+  };
+  storage: {
+    session: StorageArea;
+    local: StorageArea;
+  };
+};
+
+type StorageArea = {
+  get: (keys: string | null) => Promise<Record<string, unknown>>;
+  set: (items: Record<string, unknown>) => Promise<void>;
+  remove: (keys: string | string[]) => Promise<void>;
 };
 
 const resolvedBrowser: BrowserAPI =

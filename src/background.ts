@@ -8,12 +8,12 @@ import {
 import { logDebug, logError, logInfo } from './logger';
 import {
   downloadPasskeyFromRenterd,
+  getRenterdSettings,
   listPasskeysFromRenterd,
   uploadPasskeyDirect,
 } from './sia';
 import {
   getEncryptedRecord,
-  getSettings,
   handleMessageInBackground,
   saveEncryptedRecord,
   getRootKeyIfAvailable,
@@ -213,7 +213,7 @@ async function handleUploadUnsyncedPasskeys(uniqueIds: string[]) {
 
 // Handles syncing passkeys from renterd to the extension
 async function handleSyncFromSia() {
-  const settings = await getSettings();
+  const settings = await getRenterdSettings();
   if (!settings) return { success: false, error: 'No renterd settings' };
 
   const files = await listPasskeysFromRenterd(settings);

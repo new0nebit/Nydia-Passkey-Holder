@@ -2,14 +2,17 @@ import browser from 'browser-api';
 
 import { icons } from './ui/icons/menu';
 import { logError } from './logger';
+import { hasRenterdAccess, WRONG_PASSWORD } from './renterd';
 import {
+  accessRequestView,
+  getDraft,
   getSettings,
   setNotificationDisplayer,
   setOnSettingsComplete,
   showSettingsForm,
   validateSettings,
 } from './settings';
-import { CredentialMetadata } from './types';
+import { CredentialMetadata, RenterdSettings } from './types';
 
 type NotificationType = 'success' | 'error' | 'info' | 'warning';
 type ModalType = 'confirm';
@@ -24,6 +27,7 @@ interface SyncDownloadResult {
   failedCount: number;
   empty: boolean;
   error: boolean;
+  wrongPassword?: boolean;
 }
 
 // Domain Sanitisation
@@ -251,6 +255,8 @@ export class Menu {
   private cleanup: (() => void)[] = [];
   private isRendering = false;
   private pendingRender = false;
+  // The saved settings, loaded on render for Sync and Backup.
+  private settings: RenterdSettings | null = null;
 
   constructor() {
     setNotificationDisplayer({ showNotification: notify });
@@ -279,6 +285,13 @@ export class Menu {
       return;
     }
 
+    // Reopen settings that were not saved, as when the access prompt closed
+    // the popup.
+    if (await getDraft()) {
+      await showSettingsForm();
+      return;
+    }
+
     await this.render();
   }
 
@@ -303,6 +316,7 @@ export class Menu {
         credentialsPromise,
         getSettings(),
       ]);
+      this.settings = settings;
 
       const credentials = Array.isArray(credentialsRaw)
         ? (credentialsRaw as CredentialMetadata[])
@@ -520,6 +534,11 @@ export class Menu {
   }
 
   private async backup(passkey: CredentialMetadata, button: HTMLButtonElement): Promise<void> {
+    const address = this.settings?.serverAddress;
+    if (address && !(await hasRenterdAccess(address))) {
+      this.showAccessRequest(address);
+      return;
+    }
     button.disabled = true;
     button.classList.add('uploading');
     setButtonLabel(button, 'Backing up…');
@@ -552,16 +571,34 @@ export class Menu {
     }
   }
 
-  private async sync(button: HTMLButtonElement): Promise<void> {
-    button.disabled = true;
-    setButtonLabel(button, 'Syncing…');
+  // Sync and Backup never prompt: the prompt closes the popup and would end
+  // them, so access gets a click of its own and they are run again after it.
+  private showAccessRequest(address: string): void {
+    const passkeyList = document.getElementById('passkey-list');
+    if (!passkeyList) return;
+    passkeyList.querySelector(':scope > .access-request')?.remove();
+    const request = accessRequestView(address, () => {
+      request.remove();
+      notify('success', 'Success', `Access to ${address} allowed.`);
+    });
+    passkeyList.prepend(request);
+  }
 
-    const settings = await getSettings();
+  private async sync(button: HTMLButtonElement): Promise<void> {
+    const settings = this.settings;
     if (!settings || !validateSettings(settings)) {
       notify('error', 'Error', 'No renterd settings found.');
       resetSyncButton(button);
       return;
     }
+    if (!(await hasRenterdAccess(settings.serverAddress))) {
+      this.showAccessRequest(settings.serverAddress);
+      resetSyncButton(button);
+      return;
+    }
+
+    button.disabled = true;
+    setButtonLabel(button, 'Syncing…');
 
     try {
       const [uploadResult, downloadResult] = await Promise.all([
@@ -574,7 +611,7 @@ export class Menu {
 
       if (uploadResult.error || downloadResult.error) {
         type = 'error';
-        message = 'Error syncing Passkeys with renterd server.';
+        message = downloadResult.wrongPassword ? WRONG_PASSWORD : 'Error syncing Passkeys with renterd server.';
       } else if (uploadResult.failedCount || downloadResult.failedCount) {
         type = 'warning';
         message = 'Some passkeys failed to synchronize.';
@@ -624,12 +661,14 @@ export class Menu {
         syncedCount?: number;
         failedCount?: number;
         success?: boolean;
+        error?: string;
       };
       return {
         syncedCount: response?.syncedCount ?? 0,
         failedCount: response?.failedCount ?? 0,
         empty: !response?.syncedCount && !response?.failedCount,
         error: !response?.success,
+        wrongPassword: response?.error === WRONG_PASSWORD,
       };
     } catch (error) {
       logError('[Menu] downloadNew error', error);
