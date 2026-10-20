@@ -311,6 +311,7 @@ async function router(message: BackgroundMessage, sender: unknown): Promise<unkn
     switch (message.type) {
       case 'getSiteIcon':
       case 'saveSiteIcon':
+      case 'markSiteIconMissing':
       case 'setSiteIconsEnabled':
         return await handleSiteIconMessage(message, sender);
 

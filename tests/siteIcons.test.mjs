@@ -37,7 +37,8 @@ function background(enabled = false) {
       async iconsEnabled() { calls.push('enabled'); return enabled; },
       async setIconsEnabled(value) { calls.push(['set', value]); enabled = value; },
       async readIcon(rpId) { calls.push(['read', rpId]); return cache.get(rpId) ?? null; },
-      async writeIcon(rpId, dataUrl) { calls.push(['write', rpId, dataUrl]); cache.set(rpId, dataUrl); return true; },
+      async writeIcon(rpId, dataUrl) { calls.push(['write', rpId, dataUrl]); cache.set(rpId, { dataUrl }); return true; },
+      async markIconMissing(rpId) { calls.push(['missing', rpId]); cache.set(rpId, { missingSince: Date.now() }); return true; },
     },
   });
   return { request: feature.handleSiteIconMessage, calls, cache };
@@ -124,21 +125,49 @@ test('authentication icons: local storage survives a page-cache miss, with no Go
   }
 });
 
-function menuIcons({ enabled = true, stored = null, response, domain = (name) => name } = {}) {
+function menuIcons({ enabled = true, stored = null, missing = false, response, domain = (name) => name } = {}, globals = {}) {
   const requests = [];
   const saved = [];
+  const missed = [];
   const feature = load('menu', {
     './client': {
-      async getSiteIcon(rpId) { return { enabled, dataUrl: stored, iconDomain: domain(rpId) }; },
-      async saveSiteIcon(rpId, dataUrl) { saved.push({ rpId, dataUrl }); stored = dataUrl; return enabled; },
+      async getSiteIcon(rpId) {
+        const icon = saved.findLast((entry) => entry.rpId === rpId)?.dataUrl ?? stored;
+        return { enabled, dataUrl: icon, missing: missing || missed.includes(rpId), iconDomain: domain(rpId) };
+      },
+      async saveSiteIcon(rpId, dataUrl) { saved.push({ rpId, dataUrl }); return enabled; },
+      async markSiteIconMissing(rpId) { missed.push(rpId); },
     },
     './image': images,
   }, { async fetch(url, options) {
     requests.push({ url, options });
     return response ? response(options) : new Response(imageBytes, { headers: { 'content-type': 'image/png' } });
-  } });
-  return { ...feature, requests, saved };
+  }, ...globals });
+  return { ...feature, requests, saved, missed };
 }
+
+const image = () => new Response(imageBytes, { headers: { 'content-type': 'image/png' } });
+
+// Released by the test, oldest first
+function heldDownloads() {
+  const releases = [];
+  return {
+    response: () => new Promise((resolve) => releases.push(() => resolve(image()))),
+    release: () => releases.shift()(),
+    get held() { return releases.length; },
+  };
+}
+
+async function ticks(count = 10) {
+  for (let index = 0; index < count; index++) await new Promise((resolve) => setTimeout(resolve, 1));
+}
+
+async function until(condition) {
+  for (let index = 0; index < 200 && !condition(); index++) await ticks(1);
+  assert.ok(condition());
+}
+
+const requested = (icons, rpId) => icons.requests.some(({ url }) => url.includes(`domain=${rpId}&`));
 
 test('menu icons: disabled or locally cached icons never contact Google', async () => {
   for (const state of [{ enabled: false, stored: ICON }, { enabled: true, stored: ICON }]) {
@@ -162,11 +191,23 @@ test('menu icons: download a missing icon once per RP and persist it for later r
   assert.equal(icons.requests.length, 1);
 });
 
+test('menu icons: subdomains of one site keep separate icons and misses', async () => {
+  const icons = menuIcons({ domain: rpId.iconDomain, response: () => icons.requests.length === 1
+    ? new Response(imageBytes, { status: 404, headers: { 'content-type': 'image/png' } })
+    : image() });
+  assert.equal(await icons.loadMenuSiteIcon('login.sia.storage'), null);
+  assert.equal(await icons.loadMenuSiteIcon('app.sia.storage'), ICON);
+  assert.deepEqual(icons.requests.map(({ url }) => url), Array(2).fill('https://www.google.com/s2/favicons?domain=sia.storage&sz=64'));
+  assert.deepEqual(icons.missed, ['login.sia.storage']);
+  assert.deepEqual(icons.saved, [{ rpId: 'app.sia.storage', dataUrl: ICON }]);
+});
+
 test('menu icons: special and local names never contact Google', async () => {
   for (const name of ['localhost', 'nas.local', 'nas.home.arpa', 'shop.abcd.onion', 'router.lan']) {
     const icons = menuIcons({ domain: rpId.iconDomain });
     assert.equal(await icons.loadMenuSiteIcon(name), null);
     assert.equal(icons.requests.length, 0);
+    assert.deepEqual(icons.missed, []);
   }
 });
 
@@ -245,6 +286,19 @@ test('authentication icons: a stalled lookup cannot hold up the confirmation win
   assert.equal(await client.getPageSiteIcon('example.com'), undefined);
 });
 
+test('website icons: a Google miss is reported for 30 days, then retried', async () => {
+  const icons = background(true);
+  const day = 24 * 60 * 60 * 1000;
+  for (const [missingSince, missing] of [[Date.now() - 29 * day, true], [Date.now() - 31 * day, false], [Date.now() + day, false]]) {
+    icons.cache.set('example.com', { missingSince });
+    const state = await icons.request({ type: 'getSiteIcon', rpId: 'example.com' }, menuSender);
+    assert.equal(state.dataUrl, null);
+    assert.equal(state.missing, missing);
+  }
+  icons.cache.clear();
+  assert.equal((await icons.request({ type: 'getSiteIcon', rpId: 'example.com' }, menuSender)).missing, false);
+});
+
 test('website icons: the menu learns which domain to ask Google for', async () => {
   const icons = background(true);
   for (const [name, domain] of [['login.sia.storage', 'sia.storage'], ['localhost', null], ['abcd.onion', null]]) {
@@ -261,4 +315,145 @@ test('menu icons: the client passes on only a domain name', async () => {
     });
     assert.equal((await client.getSiteIcon('login.sia.storage')).iconDomain, expected);
   }
+});
+
+test('website icons: only the menu records a missing icon', async () => {
+  const icons = background(true);
+  await assert.rejects(icons.request({ type: 'markSiteIconMissing', rpId: 'example.com' }, pageSender), { name: 'SecurityError' });
+  assert.deepEqual(icons.calls, []);
+  assert.equal((await icons.request({ type: 'markSiteIconMissing', rpId: 'example.com' }, menuSender)).saved, true);
+  assert.deepEqual(icons.calls, ['enabled', ['missing', 'example.com']]);
+});
+
+test('menu icons: a remembered miss never contacts Google', async () => {
+  const icons = menuIcons({ missing: true });
+  assert.equal(await icons.loadMenuSiteIcon('example.com'), null);
+  assert.equal(icons.requests.length, 0);
+});
+
+test('menu icons: only a 404 is remembered as a missing icon', async () => {
+  const icons = menuIcons({ response: () => new Response(imageBytes, { status: 404, headers: { 'content-type': 'image/png' } }) });
+  assert.equal(await icons.loadMenuSiteIcon('example.com'), null);
+  assert.deepEqual(icons.missed, ['example.com']);
+  assert.equal(await icons.loadMenuSiteIcon('example.com'), null);
+  assert.equal(icons.requests.length, 1);
+
+  for (const response of [
+    () => new Response('', { status: 500 }),
+    () => new Response('', { status: 429 }),
+    () => Promise.reject(new TypeError('Failed to fetch')),
+  ]) {
+    const failing = menuIcons({ response });
+    assert.equal(await failing.loadMenuSiteIcon('example.com'), null);
+    assert.deepEqual(failing.missed, []);
+  }
+});
+
+test('menu icons: at most four Google downloads run at once', async () => {
+  const downloads = heldDownloads();
+  const icons = menuIcons({ response: downloads.response });
+  const loads = Array.from({ length: 6 }, (_, index) => icons.loadMenuSiteIcon(`site${index}.example`));
+  await until(() => icons.requests.length === 4);
+  await ticks();
+  assert.equal(icons.requests.length, 4);
+  downloads.release();
+  await until(() => icons.requests.length === 5);
+  while (icons.requests.length < 6 || downloads.held) {
+    if (downloads.held) downloads.release();
+    await ticks(1);
+  }
+  assert.deepEqual(await Promise.all(loads), Array(6).fill(ICON));
+});
+
+test('menu icons: queued downloads for rows no longer shown are skipped', async () => {
+  const downloads = heldDownloads();
+  const icons = menuIcons({ response: downloads.response });
+  const busy = Array.from({ length: 4 }, (_, index) => icons.loadMenuSiteIcon(`busy${index}.example`));
+  await until(() => icons.requests.length === 4);
+
+  const scrolledPast = icons.loadMenuSiteIcon('scrolled-past.example', () => false);
+  // One row gone, one shown: download stays
+  const shared = icons.loadMenuSiteIcon('shared.example', () => false);
+  icons.loadMenuSiteIcon('shared.example', () => true);
+  await ticks();
+
+  downloads.release();
+  await until(() => icons.requests.length === 5);
+  assert.equal(requested(icons, 'scrolled-past.example'), false);
+  assert.equal(requested(icons, 'shared.example'), true);
+  assert.equal(await scrolledPast, undefined);
+
+  while (downloads.held) {
+    downloads.release();
+    await ticks(1);
+  }
+  assert.equal(await shared, ICON);
+  assert.deepEqual(await Promise.all(busy), Array(4).fill(ICON));
+});
+
+function observedMenuIcons(state) {
+  let observer;
+  // With new, returns the observer
+  function FakeIntersectionObserver(callback) {
+    const targets = new Set();
+    observer = {
+      callback,
+      targets,
+      observe(target) { targets.add(target); },
+      unobserve(target) { targets.delete(target); },
+      disconnect() { targets.clear(); },
+    };
+    return observer;
+  }
+  const icons = menuIcons(state, { IntersectionObserver: FakeIntersectionObserver });
+  return {
+    ...icons,
+    get observer() { return observer; },
+    scroll(target, isIntersecting) { observer.callback([{ target, isIntersecting }]); },
+  };
+}
+
+test('menu icons: rows ask for icons only while on screen', async () => {
+  const icons = observedMenuIcons();
+  const shown = [];
+  const row = { isConnected: true };
+  const offscreen = { isConnected: true };
+  icons.watchMenuSiteIcon(row, 'row.example', (dataUrl) => shown.push(['row', dataUrl]));
+  icons.watchMenuSiteIcon(offscreen, 'offscreen.example', (dataUrl) => shown.push(['offscreen', dataUrl]));
+  await ticks();
+  assert.equal(icons.requests.length, 0);
+
+  icons.scroll(row, true);
+  await until(() => shown.length === 1);
+  assert.deepEqual(shown, [['row', ICON]]);
+  assert.equal(icons.requests.length, 1);
+  assert.equal(icons.observer.targets.has(row), false);
+  assert.equal(icons.observer.targets.has(offscreen), true);
+});
+
+test('menu icons: a row hidden before its download starts asks again when shown', async () => {
+  const downloads = heldDownloads();
+  const icons = observedMenuIcons({ response: downloads.response });
+  const busy = Array.from({ length: 4 }, (_, index) => icons.loadMenuSiteIcon(`busy${index}.example`));
+  await until(() => icons.requests.length === 4);
+
+  const shown = [];
+  const row = { isConnected: true };
+  icons.watchMenuSiteIcon(row, 'row.example', (dataUrl) => shown.push(dataUrl));
+  icons.scroll(row, true);
+  await ticks();
+  icons.scroll(row, false);
+  downloads.release();
+  await ticks();
+  assert.equal(requested(icons, 'row.example'), false);
+
+  icons.scroll(row, true);
+  await until(() => requested(icons, 'row.example'));
+  while (downloads.held) {
+    downloads.release();
+    await ticks(1);
+  }
+  await until(() => shown.length === 1);
+  assert.deepEqual(shown, [ICON]);
+  await Promise.all(busy);
 });

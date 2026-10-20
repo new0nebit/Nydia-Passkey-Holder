@@ -15,7 +15,7 @@ import {
 } from './settings';
 import { CredentialMetadata, RenterdSettings } from './types';
 import { getSiteIcon } from './siteIcons/client';
-import { loadMenuSiteIcon } from './siteIcons/menu';
+import { watchMenuSiteIcon } from './siteIcons/menu';
 
 type NotificationType = 'success' | 'error' | 'info' | 'warning';
 type ModalType = 'confirm';
@@ -190,8 +190,7 @@ function createSiteIcon(rpId: string, enabled: boolean): HTMLElement {
   if (globe) icon.appendChild(globe);
   if (!enabled) return icon;
 
-  void loadMenuSiteIcon(rpId).then((dataUrl) => {
-    if (!dataUrl || !icon.isConnected) return;
+  watchMenuSiteIcon(icon, rpId, (dataUrl) => {
     const image = create('img', ['site-icon-img']);
     image.alt = `${rpId} icon`;
     image.decoding = 'async';

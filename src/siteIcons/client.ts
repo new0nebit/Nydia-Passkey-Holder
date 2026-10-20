@@ -6,6 +6,7 @@ import { isSiteIcon } from './image';
 type IconState = {
   enabled: boolean;
   dataUrl?: string | null;
+  missing?: boolean;
   iconDomain?: string | null;
   error?: string;
   saved?: boolean;
@@ -19,6 +20,7 @@ export async function getSiteIcon(rpId?: string): Promise<IconState> {
   return {
     enabled: result?.enabled === true,
     dataUrl: isSiteIcon(result?.dataUrl) ? result.dataUrl : null,
+    missing: result?.missing === true,
     iconDomain: typeof result?.iconDomain === 'string' ? result.iconDomain : null,
   };
 }
@@ -31,6 +33,10 @@ export async function setSiteIconsEnabled(enabled: boolean): Promise<void> {
 export async function saveSiteIcon(rpId: string, dataUrl: string): Promise<boolean> {
   const result = await browser.runtime.sendMessage({ type: 'saveSiteIcon', rpId, dataUrl }) as IconState;
   return result?.enabled === true && result.saved === true;
+}
+
+export async function markSiteIconMissing(rpId: string): Promise<void> {
+  await browser.runtime.sendMessage({ type: 'markSiteIconMissing', rpId });
 }
 
 // Never contacts Google

@@ -4,7 +4,13 @@ import { isSiteIcon } from './image';
 
 // Separate from passkeys and Sia backups
 const DB_NAME = 'NydiaSiteIcons';
+// Misses are encrypted like icons
+const MISSING = /^missing:(\d{1,15})$/;
 const encoder = new TextEncoder();
+
+type IconKeys = { id: string; key: CryptoKey };
+type IconRecord = { iv: Uint8Array; data: ArrayBuffer };
+type IconEntry = { dataUrl: string } | { missingSince: number };
 
 async function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -23,24 +29,34 @@ async function openDB(): Promise<IDBDatabase> {
   });
 }
 
-async function access<T>(
+async function transact(
   store: string,
   mode: IDBTransactionMode,
-  operation: (value: IDBObjectStore) => IDBRequest<T>,
-): Promise<T> {
+  operation: (value: IDBObjectStore) => void,
+): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(store, mode);
-    const request = operation(transaction.objectStore(store));
+    operation(transaction.objectStore(store));
     transaction.oncomplete = () => {
       db.close();
-      resolve(request.result);
+      resolve();
     };
     transaction.onabort = () => {
       db.close();
       reject(transaction.error ?? new Error('Icon storage transaction failed'));
     };
   });
+}
+
+async function access<T>(
+  store: string,
+  mode: IDBTransactionMode,
+  operation: (value: IDBObjectStore) => IDBRequest<T>,
+): Promise<T> {
+  let request!: IDBRequest<T>;
+  await transact(store, mode, (value) => { request = operation(value); });
+  return request.result;
 }
 
 export async function iconsEnabled(): Promise<boolean> {
@@ -51,7 +67,7 @@ export async function setIconsEnabled(enabled: boolean): Promise<void> {
   await access('preferences', 'readwrite', (store) => store.put(enabled, 'enabled'));
 }
 
-async function cacheKeys(rpId: string): Promise<{ id: string; key: CryptoKey } | null> {
+async function cacheKeys(rpId: string): Promise<IconKeys | null> {
   const root = await getRootKeyIfAvailable();
   if (!root) return null;
   const params = (purpose: string): HkdfParams => ({
@@ -67,34 +83,71 @@ async function cacheKeys(rpId: string): Promise<{ id: string; key: CryptoKey } |
   return { id, key };
 }
 
-export async function readIcon(rpId: string): Promise<string | null> {
-  const keys = await cacheKeys(rpId);
-  if (!keys) return null;
-  const record = await access<unknown>('icons', 'readonly', (store) => store.get(keys.id));
-  if (
-    !record || typeof record !== 'object' ||
-    !('iv' in record) || !(record.iv instanceof Uint8Array) ||
-    !('data' in record) || !(record.data instanceof ArrayBuffer)
-  ) return null;
+function isIconRecord(value: unknown): value is IconRecord {
+  return !!value && typeof value === 'object' &&
+    'iv' in value && value.iv instanceof Uint8Array &&
+    'data' in value && value.data instanceof ArrayBuffer;
+}
+
+// A fresh IV per write marks the version
+function version(record: unknown): string | null {
+  return isIconRecord(record) ? base64UrlEncode(record.iv) : null;
+}
+
+async function seal(keys: IconKeys, plaintext: string): Promise<IconRecord> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const data = await crypto.subtle.encrypt({
+    name: 'AES-GCM', iv, additionalData: encoder.encode(keys.id),
+  }, keys.key, encoder.encode(plaintext));
+  return { iv, data };
+}
+
+async function unseal(keys: IconKeys, record: unknown): Promise<IconEntry | null> {
+  if (!isIconRecord(record)) return null;
   try {
     const plaintext = await crypto.subtle.decrypt({
       name: 'AES-GCM', iv: new Uint8Array(record.iv), additionalData: encoder.encode(keys.id),
     }, keys.key, record.data);
-    const dataUrl = new TextDecoder().decode(plaintext);
-    return isSiteIcon(dataUrl) ? dataUrl : null;
+    const value = new TextDecoder().decode(plaintext);
+    if (isSiteIcon(value)) return { dataUrl: value };
+    const missing = MISSING.exec(value);
+    return missing ? { missingSince: Number(missing[1]) } : null;
   } catch {
     // Wrong key or corrupt entry: a miss
     return null;
   }
 }
 
+export async function readIcon(rpId: string): Promise<IconEntry | null> {
+  const keys = await cacheKeys(rpId);
+  if (!keys) return null;
+  return unseal(keys, await access<unknown>('icons', 'readonly', (store) => store.get(keys.id)));
+}
+
 export async function writeIcon(rpId: string, dataUrl: string): Promise<boolean> {
   const keys = await cacheKeys(rpId);
   if (!keys) return false;
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const data = await crypto.subtle.encrypt({
-    name: 'AES-GCM', iv, additionalData: encoder.encode(keys.id),
-  }, keys.key, encoder.encode(dataUrl));
-  await access('icons', 'readwrite', (store) => store.put({ iv, data }, keys.id));
+  const record = await seal(keys, dataUrl);
+  await access('icons', 'readwrite', (store) => store.put(record, keys.id));
   return true;
+}
+
+// Never overwrites an icon
+export async function markIconMissing(rpId: string): Promise<boolean> {
+  const keys = await cacheKeys(rpId);
+  if (!keys) return false;
+  const current = await access<unknown>('icons', 'readonly', (store) => store.get(keys.id));
+  const entry = await unseal(keys, current);
+  if (entry && 'dataUrl' in entry) return false;
+  const record = await seal(keys, `missing:${Date.now()}`);
+  let written = false;
+  await transact('icons', 'readwrite', (store) => {
+    const request = store.get(keys.id);
+    request.onsuccess = () => {
+      if (version(request.result) !== version(current)) return;
+      store.put(record, keys.id);
+      written = true;
+    };
+  });
+  return written;
 }
