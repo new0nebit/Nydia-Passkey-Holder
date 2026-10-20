@@ -27,7 +27,7 @@
     "dev": "npm-run-all --parallel --continue-on-error dev:chrome dev:firefox",
     "dev:chrome": "webpack --watch --mode development --env target=chrome",
     "dev:firefox": "webpack --watch --mode development --env target=firefox",
-    "lint": "eslint 'src/**/*.{js,ts}'",
+    "lint": "eslint 'src/**/*.{js,ts}' tests",
     "test": "tsc -p tests/tsconfig.json && node --test tests/*.test.mjs",
     "type-check": "tsc --noEmit",
     "check": "npm-run-all --continue-on-error lint type-check",
