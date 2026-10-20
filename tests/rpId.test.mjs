@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { canonicalRpIdForOrigin, getWebAuthnSenderOrigin } from '../.test-build/utils/rpId.js';
+import { canonicalRpIdForOrigin, getWebAuthnSenderOrigin, iconDomain } from '../.test-build/utils/rpId.js';
 
 const validCases = [
   ['https://login.example.com', 'login.example.com'],
@@ -184,4 +184,27 @@ test('keeps the port and rejects non-web schemes', () => {
     }),
     null,
   );
+});
+
+test('icon lookups use the registrable domain and skip special and local names', () => {
+  for (const [rpId, domain] of [
+    ['login.sia.storage', 'sia.storage'],
+    ['sia.storage', 'sia.storage'],
+    ['accounts.google.com', 'google.com'],
+    ['shop.example.co.uk', 'example.co.uk'],
+    ['user1.github.io', 'user1.github.io'],
+    ['xn--bcher-kva.example.de', 'example.de'],
+    ['localhost', null],
+    ['nas.local', null],
+    ['nas.home.arpa', null],
+    ['abcd.onion', null],
+    ['shop.abcd.onion', null],
+    ['login.example.com', null],
+    ['router.lan', null],
+    ['192.0.2.10', null],
+    ['com', null],
+    ['github.io', null],
+  ]) {
+    assert.equal(iconDomain(rpId), domain, rpId);
+  }
 });

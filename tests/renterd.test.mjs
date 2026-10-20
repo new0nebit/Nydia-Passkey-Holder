@@ -166,8 +166,7 @@ class FakeElement {
     this.parent = null;
   }
   addEventListener(type, listener) { this.listeners.push([type, listener]); }
-  set innerHTML(html) {
-    assert.equal(html, '');
+  replaceChildren() {
     for (const child of [...this.children]) child.remove();
   }
   get elements() { return { namedItem: (name) => this.find((element) => element.name === name) }; }
@@ -197,8 +196,9 @@ function renterd(browser, fetch = async () => { throw new TypeError('offline'); 
   return load('renterd', { 'browser-api': browser.api, './logger': logger }, { fetch });
 }
 
-// The settings form as the popup opens it, with the saved settings loaded and
+// The renterd form as the popup opens it, with the saved settings loaded and
 // its private handlers exposed. The calls that opened it are forgotten.
+// completed counts exits to Settings or to the list.
 async function settingsPage({ browser = browserMock(), fetch = async () => ({ ok: true }) } = {}) {
   const requests = [];
   const recordingFetch = (url, options) => {
@@ -208,7 +208,8 @@ async function settingsPage({ browser = browserMock(), fetch = async () => ({ ok
   const access = renterd(browser, recordingFetch);
   const list = new FakeElement('div');
   const popup = { close() { browser.calls.push(['close']); } };
-  const settings = load('settings', { 'browser-api': browser.api, './logger': logger, './renterd': access }, {
+  const iconSettings = async () => new FakeElement('div');
+  const settings = load('settings', { 'browser-api': browser.api, './logger': logger, './renterd': access, './siteIcons/settings': { iconSettings } }, {
     fetch: recordingFetch,
     FormData: class {
       constructor(form) { this.form = form; }
@@ -223,14 +224,15 @@ async function settingsPage({ browser = browserMock(), fetch = async () => ({ ok
   }, '\nexports.saveSettingsFromForm = saveSettingsFromForm;\n');
   const notices = [];
   settings.setNotificationDisplayer({ showNotification: (...notice) => notices.push(notice) });
-  let completed = 0;
-  settings.setOnSettingsComplete(() => { completed += 1; });
+  let toList = 0;
+  settings.setOnSettingsComplete(() => { toList += 1; });
+  const completed = () => toList + Number(list.byClass('settings-title')?.textContent === 'Settings');
 
-  await settings.showSettingsForm();
+  await settings.showRenterdSettings();
   browser.calls.length = 0;
   const form = list.find((element) => element.tagName === 'form');
   const value = (name) => form.elements.namedItem(name).value;
-  return { settings, browser, requests, notices, form, value, button: form.button('Test Connection'), completed: () => completed };
+  return { settings, browser, requests, notices, form, value, button: form.button('Test Connection'), completed };
 }
 
 // The real store on an in-memory NydiaDB holding the given renterd settings.

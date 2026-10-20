@@ -13,7 +13,7 @@ export type PopupInitPayload = {
   rpId: string;
   userName?: string;
   accounts?: Account[];
-  // Cached site icon
+  // Cached or saved site icon
   pageIconDataUrl?: string;
 };
 

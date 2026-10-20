@@ -1,8 +1,8 @@
 import { logDebug } from '../logger';
+import { imageDataUrl } from '../siteIcons/image';
 
 // Cache only: never hits the network
 
-const MAX_ICON_BYTES = 64 * 1024;
 const READ_BUDGET_MS = 300;
 
 function iconCandidates(): string[] {
@@ -23,15 +23,6 @@ function isSameOrigin(url: string): boolean {
   }
 }
 
-function toDataUrl(blob: Blob): Promise<string | null> {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
-    reader.onerror = () => resolve(null);
-    reader.readAsDataURL(blob);
-  });
-}
-
 async function readCandidate(url: string): Promise<string | null> {
   const response = await fetch(url, {
     cache: 'only-if-cached',
@@ -40,15 +31,7 @@ async function readCandidate(url: string): Promise<string | null> {
     redirect: 'error',
   });
 
-  if (!response.ok) return null;
-
-  const contentType = response.headers.get('content-type') ?? '';
-  if (!contentType.startsWith('image/')) return null;
-
-  const blob = await response.blob();
-  if (blob.size === 0 || blob.size > MAX_ICON_BYTES) return null;
-
-  return toDataUrl(blob);
+  return imageDataUrl(response);
 }
 
 async function readFirstCached(): Promise<string | null> {
