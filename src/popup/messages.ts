@@ -13,6 +13,8 @@ export type PopupInitPayload = {
   rpId: string;
   userName?: string;
   accounts?: Account[];
+  // Cached site icon
+  pageIconDataUrl?: string;
 };
 
 export type PopupInitMessage = {

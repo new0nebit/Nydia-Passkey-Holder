@@ -21,7 +21,7 @@ for (const entry of ['dispatcher', 'injector']) {
       require(name) {
         if (name === './logger') return { logDebug() {} };
         if (name === 'browser-api') return { default: {} };
-        if (name === './utils/domError' || name === './popup/shadowHost') return {};
+        if (name === './utils/domError' || name === './popup/shadowHost' || name === './popup/pageIcon') return {};
         throw new Error(`Unexpected import: ${name}`);
       },
       get document() {
