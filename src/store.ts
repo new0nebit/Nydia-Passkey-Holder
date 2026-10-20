@@ -169,13 +169,37 @@ export async function openSecret(uniqueId: string): Promise<SecretPayload> {
 }
 
 // Settings Management
+// Resolves once the settings are committed, so the menu never reports a save
+// that did not happen.
 async function saveSettings(settings: RenterdSettings): Promise<void> {
   const db = await openDB();
-  await new Promise<void>((resolve) => {
-    db
-      .transaction(SETTINGS_STORE, 'readwrite')
-      .objectStore(SETTINGS_STORE)
-      .put({ ...settings, id: 'renterdSettings' }).onsuccess = () => resolve();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(SETTINGS_STORE, 'readwrite');
+    transaction.objectStore(SETTINGS_STORE).put({ ...settings, id: 'renterdSettings' });
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error('Failed to save settings'));
+    transaction.onabort = () => reject(transaction.error ?? new Error('Failed to save settings'));
+  });
+}
+
+// Records a detected protocol, unless the address or port changed meanwhile.
+export async function saveServerProtocol(
+  settings: RenterdSettings,
+  serverProtocol: 'http' | 'https',
+): Promise<void> {
+  const db = await openDB();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(SETTINGS_STORE, 'readwrite');
+    const store = transaction.objectStore(SETTINGS_STORE);
+    const request = store.get('renterdSettings') as IDBRequest<RenterdSettings | undefined>;
+    request.onsuccess = () => {
+      const current = request.result;
+      if (current?.serverAddress !== settings.serverAddress || current.serverPort !== settings.serverPort) return;
+      store.put({ ...current, serverProtocol, id: 'renterdSettings' });
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error('Failed to save settings'));
+    transaction.onabort = () => reject(transaction.error ?? new Error('Failed to save settings'));
   });
 }
 

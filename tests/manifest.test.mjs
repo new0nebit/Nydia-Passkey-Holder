@@ -27,3 +27,13 @@ for (const name of ['manifest.chrome.json', 'manifest.firefox.json']) {
     }
   });
 }
+
+test('renterd servers are requested at runtime, never granted up front', () => {
+  const origins = ['http://*/*', 'https://*/*'];
+  assert.deepEqual(manifest('manifest.chrome.json').optional_host_permissions, origins);
+  // Firefox before 128 reads optional hosts from optional_permissions.
+  assert.deepEqual(manifest('manifest.firefox.json').optional_permissions, origins);
+  for (const name of ['manifest.chrome.json', 'manifest.firefox.json']) {
+    assert.equal(manifest(name).host_permissions, undefined);
+  }
+});

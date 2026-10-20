@@ -12,6 +12,7 @@
   },
   "include": [
     "../src/background.ts",
+    "../src/settings.ts",
     "../src/utils/der.ts",
     "../src/utils/domError.ts",
     "../src/utils/rpId.ts",

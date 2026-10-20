@@ -1,5 +1,6 @@
 import { logDebug, logError } from './logger';
-import { getSettings } from './store';
+import { detectProtocol, WRONG_PASSWORD } from './renterd';
+import { getSettings, saveServerProtocol } from './store';
 import { EncryptedEnvelope, EncryptedRecord, RenterdSettings } from './types';
 
 const PASSKEY_EXTENSION = '.passkey';
@@ -33,7 +34,31 @@ function isValidEncryptedRecord(value: unknown): value is EncryptedRecord {
   );
 }
 
-// Build base URL using saved protocol (detected during settings save).
+let detecting: { server: string; protocol: Promise<'http' | 'https'> } | null = null;
+
+// Save does not contact the server, which may not be allowed yet, so settings
+// for a new address or port are saved without a protocol. It is detected and
+// saved here on first use; concurrent requests share the check only when the
+// server and password match.
+export async function getRenterdSettings(): Promise<RenterdSettings | null> {
+  const settings = await getSettings();
+  if (!settings || settings.serverProtocol) return settings;
+
+  const server = JSON.stringify([settings.serverAddress, settings.serverPort, settings.password]);
+  if (detecting?.server !== server) {
+    const protocol = detectProtocol(settings).then(async (serverProtocol) => {
+      await saveServerProtocol(settings, serverProtocol);
+      return serverProtocol;
+    });
+    detecting = { server, protocol };
+    void protocol.catch(() => {}).finally(() => {
+      if (detecting?.protocol === protocol) detecting = null;
+    });
+  }
+  return { ...settings, serverProtocol: await detecting.protocol };
+}
+
+// Build base URL using the saved or detected protocol.
 function buildBaseURL(settings: RenterdSettings): string {
   const protocol = settings.serverProtocol ?? 'http';
   return `${protocol}://${settings.serverAddress}:${settings.serverPort}`;
@@ -94,6 +119,10 @@ async function httpRequest(
   const response = await fetch(url, options);
   logDebug('[Sia] Response status', { status: response.status });
 
+  if (response.status === 401) {
+    logError('[Sia] renterd rejected the password');
+    throw new Error(WRONG_PASSWORD);
+  }
   if (!response.ok) {
     const errorText = `HTTP error! Status: ${response.status} ${response.statusText}`;
     logError('[Sia] Non-successful server response', errorText);
@@ -172,14 +201,6 @@ export async function downloadPasskeyFromRenterd(
 export async function uploadPasskeyDirect(
   record: EncryptedRecord,
 ): Promise<{ success: boolean; message?: string; error?: string }> {
-  const settings = await getSettings();
-  if (!settings) {
-    return {
-      success: false,
-      error: 'Please configure renterd settings first.',
-    };
-  }
-
   // Clone record and mark as synced.
   const recordToUpload = { ...record, isSynced: true };
   const passkeyDataJson = JSON.stringify(recordToUpload, null, 2);
@@ -188,6 +209,13 @@ export async function uploadPasskeyDirect(
   });
 
   try {
+    const settings = await getRenterdSettings();
+    if (!settings) {
+      return {
+        success: false,
+        error: 'Please configure renterd settings first.',
+      };
+    }
     await uploadPasskeyToRenterd(passkeyData, record.uniqueId, settings);
     logDebug('[Sia] Encrypted record prepared and uploaded via renterd worker API', {
       uniqueId: record.uniqueId,

@@ -25,6 +25,11 @@ const runtime = {
     return chrome.runtime.getURL(path);
   },
 
+  getManifest: (): chrome.runtime.Manifest => {
+    // Direct passthrough to Chrome API
+    return chrome.runtime.getManifest();
+  },
+
   onMessage: {
     addListener: (
       listener: (
@@ -72,8 +77,106 @@ const runtime = {
   }
 };
 
+const permissions = {
+  request: (permissions: { origins: string[] }): Promise<boolean> => {
+    return new Promise((resolve, reject) => {
+      chrome.permissions.request(permissions, (granted) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message ?? 'Permission request failed'));
+          return;
+        }
+        resolve(granted);
+      });
+    });
+  },
+
+  contains: (permissions: { origins: string[] }): Promise<boolean> => {
+    return new Promise((resolve, reject) => {
+      chrome.permissions.contains(permissions, (granted) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message ?? 'Permission check failed'));
+          return;
+        }
+        resolve(granted);
+      });
+    });
+  },
+
+  getAll: (): Promise<{ origins?: string[] }> => {
+    return new Promise((resolve, reject) => {
+      chrome.permissions.getAll((permissions) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message ?? 'Permission check failed'));
+          return;
+        }
+        resolve(permissions);
+      });
+    });
+  },
+
+  remove: (permissions: { origins: string[] }): Promise<boolean> => {
+    return new Promise((resolve, reject) => {
+      chrome.permissions.remove(permissions, (removed) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message ?? 'Permission removal failed'));
+          return;
+        }
+        resolve(removed);
+      });
+    });
+  },
+};
+
+// Session storage lives in memory; local storage persists.
+function storageArea(area: chrome.storage.StorageArea) {
+  return {
+    get: (keys: string | null): Promise<Record<string, unknown>> => {
+      return new Promise((resolve, reject) => {
+        area.get(keys, (items) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message ?? 'Storage read failed'));
+            return;
+          }
+          resolve(items);
+        });
+      });
+    },
+
+    set: (items: Record<string, unknown>): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        area.set(items, () => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message ?? 'Storage write failed'));
+            return;
+          }
+          resolve();
+        });
+      });
+    },
+
+    remove: (keys: string | string[]): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        area.remove(keys, () => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message ?? 'Storage write failed'));
+            return;
+          }
+          resolve();
+        });
+      });
+    },
+  };
+}
+
+const storage = {
+  session: storageArea(chrome.storage.session),
+  local: storageArea(chrome.storage.local),
+};
+
 const chromeAPI = {
-  runtime
+  runtime,
+  permissions,
+  storage,
 };
 
 export default chromeAPI;

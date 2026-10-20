@@ -9,21 +9,44 @@
       "strict_min_version": "126.0"
     }
   },
+  "permissions": [
+    "storage"
+  ],
+  "optional_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
   "background": {
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "content_scripts": [
     {
-      "matches": ["https://*/*", "http://localhost/*"],
-      "js": ["dispatcher.js"],
+      "matches": [
+        "https://*/*",
+        "http://localhost/*"
+      ],
+      "js": [
+        "dispatcher.js"
+      ],
       "run_at": "document_start",
       "all_frames": false
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["injector.js", "icon.png", "popup.html", "popup.js", "popup.css"],
-      "matches": ["https://*/*", "http://localhost/*"]
+      "resources": [
+        "injector.js",
+        "icon.png",
+        "popup.html",
+        "popup.js",
+        "popup.css"
+      ],
+      "matches": [
+        "https://*/*",
+        "http://localhost/*"
+      ]
     }
   ],
   "action": {
