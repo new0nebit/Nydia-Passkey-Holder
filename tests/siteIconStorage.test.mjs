@@ -27,7 +27,7 @@ const images = load('image', {});
 
 // Real storage on an in-memory IndexedDB
 // beforeEncrypt interleaves other writes
-async function storage({ root = true, now = () => Date.now(), beforeEncrypt } = {}) {
+async function storage({ root = true, enabled = true, rpIds = () => new Set(), now = () => Date.now(), beforeEncrypt } = {}) {
   const indexedDB = createIndexedDB();
   const rootKey = root
     ? await crypto.subtle.importKey('raw', crypto.getRandomValues(new Uint8Array(32)), 'HKDF', false, ['deriveKey'])
@@ -42,7 +42,10 @@ async function storage({ root = true, now = () => Date.now(), beforeEncrypt } = 
     },
   };
   const feature = load('storage', {
-    '../store': { async getRootKeyIfAvailable() { return rootKey; } },
+    '../store': {
+      async getRootKeyIfAvailable() { return rootKey; },
+      async getAllRpIds() { return rpIds(); },
+    },
     '../utils/base64url': base64url,
     './image': images,
   }, {
@@ -50,6 +53,7 @@ async function storage({ root = true, now = () => Date.now(), beforeEncrypt } = 
     crypto: { subtle, getRandomValues: (array) => crypto.getRandomValues(array) },
     Date: { now },
   });
+  if (enabled) await feature.setIconsEnabled(true);
   return { ...feature, records: () => indexedDB.entries('NydiaSiteIcons', 'icons') };
 }
 
@@ -104,4 +108,61 @@ test('icon storage: nothing is read or written without a root key', async () => 
   assert.equal(await icons.markIconMissing('example.com'), false);
   assert.equal(await icons.readIcon('example.com'), null);
   assert.equal(icons.records().size, 0);
+});
+
+test('icon storage: pruning keeps a site icon until its last passkey is gone', async () => {
+  let passkeys = ['github.com', 'github.com', 'github.com', 'example.com'];
+  const icons = await storage({ rpIds: () => new Set(passkeys) });
+  await icons.writeIcon('github.com', ICON);
+  await icons.writeIcon('example.com', ICON);
+  await icons.writeIcon('cancelled.example', ICON);
+  await icons.markIconMissing('no-icon.example');
+  await icons.pruneIcons();
+  assert.equal(icons.records().size, 2);
+  assert.equal(await icons.readIcon('cancelled.example'), null);
+  assert.equal(await icons.readIcon('no-icon.example'), null);
+
+  passkeys = ['github.com', 'github.com', 'example.com'];
+  await icons.pruneIcons();
+  assert.equal((await icons.readIcon('github.com')).dataUrl, ICON);
+
+  passkeys = ['example.com'];
+  await icons.pruneIcons();
+  assert.equal(await icons.readIcon('github.com'), null);
+  assert.equal((await icons.readIcon('example.com')).dataUrl, ICON);
+
+  passkeys = [];
+  await icons.pruneIcons();
+  assert.equal(icons.records().size, 0);
+});
+
+test('icon storage: an incomplete passkey list or a missing root key prunes nothing', async () => {
+  const icons = await storage({ rpIds: () => null });
+  await icons.writeIcon('example.com', ICON);
+  await icons.pruneIcons();
+  assert.equal((await icons.readIcon('example.com')).dataUrl, ICON);
+
+  let listed = false;
+  const locked = await storage({ root: false, rpIds: () => { listed = true; return new Set(); } });
+  await locked.pruneIcons();
+  assert.equal(listed, false);
+});
+
+test('icon storage: turning icons off removes icons and misses', async () => {
+  const icons = await storage();
+  await icons.writeIcon('example.com', ICON);
+  await icons.markIconMissing('no-icon.example');
+  await icons.setIconsEnabled(false);
+  assert.equal(icons.records().size, 0);
+  assert.equal(await icons.iconsEnabled(), false);
+  assert.equal(await icons.writeIcon('example.com', ICON), false);
+});
+
+test('icon storage: a write that began before icons were turned off cannot bring an icon back', async () => {
+  for (const write of [(icons) => icons.writeIcon('example.com', ICON), (icons) => icons.markIconMissing('example.com')]) {
+    let icons;
+    icons = await storage({ async beforeEncrypt() { await icons.setIconsEnabled(false); } });
+    assert.equal(await write(icons), false);
+    assert.equal(icons.records().size, 0);
+  }
 });

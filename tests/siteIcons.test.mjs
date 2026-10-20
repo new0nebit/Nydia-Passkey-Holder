@@ -26,7 +26,7 @@ const rpId = require('../.test-build/utils/rpId.js');
 const menuSender = { url: 'chrome-extension://audit/menu.html' };
 const pageSender = { origin: 'https://login.example.com', frameId: 0, tab: {} };
 
-function background(enabled = false) {
+function background(enabled = false, { prune } = {}) {
   const calls = [];
   const cache = new Map();
   const feature = load('background', {
@@ -39,6 +39,7 @@ function background(enabled = false) {
       async readIcon(rpId) { calls.push(['read', rpId]); return cache.get(rpId) ?? null; },
       async writeIcon(rpId, dataUrl) { calls.push(['write', rpId, dataUrl]); cache.set(rpId, { dataUrl }); return true; },
       async markIconMissing(rpId) { calls.push(['missing', rpId]); cache.set(rpId, { missingSince: Date.now() }); return true; },
+      async pruneIcons() { calls.push('prune'); await prune?.(); },
     },
   });
   return { request: feature.handleSiteIconMessage, calls, cache };
@@ -456,4 +457,31 @@ test('menu icons: a row hidden before its download starts asks again when shown'
   await until(() => shown.length === 1);
   assert.deepEqual(shown, [ICON]);
   await Promise.all(busy);
+});
+
+test('website icons: the passkey list prunes stale icons without waiting for it', async () => {
+  let finish;
+  const icons = background(true, { prune: () => new Promise((resolve) => { finish = resolve; }) });
+  const prunes = () => icons.calls.filter((call) => call === 'prune').length;
+  const state = await Promise.race([
+    icons.request({ type: 'getSiteIcon' }, menuSender),
+    ticks().then(() => 'waited for pruning'),
+  ]);
+  assert.equal(state.enabled, true);
+  assert.equal(prunes(), 1);
+
+  // A render mid-pass adds one more pass
+  await icons.request({ type: 'getSiteIcon' }, menuSender);
+  await icons.request({ type: 'getSiteIcon' }, menuSender);
+  assert.equal(prunes(), 1);
+  finish();
+  await until(() => prunes() === 2);
+  finish();
+  await ticks();
+  assert.equal(prunes(), 2);
+
+  const disabled = background(false);
+  await disabled.request({ type: 'getSiteIcon' }, menuSender);
+  await ticks();
+  assert.deepEqual(disabled.calls, ['enabled']);
 });

@@ -1,4 +1,4 @@
-import { getRootKeyIfAvailable } from '../store';
+import { getAllRpIds, getRootKeyIfAvailable } from '../store';
 import { base64UrlEncode } from '../utils/base64url';
 import { isSiteIcon } from './image';
 
@@ -30,14 +30,14 @@ async function openDB(): Promise<IDBDatabase> {
 }
 
 async function transact(
-  store: string,
+  stores: string[],
   mode: IDBTransactionMode,
-  operation: (value: IDBObjectStore) => void,
+  operation: (transaction: IDBTransaction) => void,
 ): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(store, mode);
-    operation(transaction.objectStore(store));
+    const transaction = db.transaction(stores, mode);
+    operation(transaction);
     transaction.oncomplete = () => {
       db.close();
       resolve();
@@ -55,7 +55,7 @@ async function access<T>(
   operation: (value: IDBObjectStore) => IDBRequest<T>,
 ): Promise<T> {
   let request!: IDBRequest<T>;
-  await transact(store, mode, (value) => { request = operation(value); });
+  await transact([store], mode, (transaction) => { request = operation(transaction.objectStore(store)); });
   return request.result;
 }
 
@@ -64,23 +64,34 @@ export async function iconsEnabled(): Promise<boolean> {
 }
 
 export async function setIconsEnabled(enabled: boolean): Promise<void> {
-  await access('preferences', 'readwrite', (store) => store.put(enabled, 'enabled'));
+  await transact(['preferences', 'icons'], 'readwrite', (transaction) => {
+    transaction.objectStore('preferences').put(enabled, 'enabled');
+    if (!enabled) transaction.objectStore('icons').clear();
+  });
+}
+
+function params(purpose: string): HkdfParams {
+  return { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: encoder.encode(purpose) };
+}
+
+function deriveIndexKey(root: CryptoKey): Promise<CryptoKey> {
+  return crypto.subtle.deriveKey(params('site-icons:index:v1'), root,
+    { name: 'HMAC', hash: 'SHA-256', length: 256 }, false, ['sign']);
+}
+
+async function recordId(indexKey: CryptoKey, rpId: string): Promise<string> {
+  return base64UrlEncode(await crypto.subtle.sign('HMAC', indexKey, encoder.encode(rpId)));
 }
 
 async function cacheKeys(rpId: string): Promise<IconKeys | null> {
   const root = await getRootKeyIfAvailable();
   if (!root) return null;
-  const params = (purpose: string): HkdfParams => ({
-    name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: encoder.encode(purpose),
-  });
   const [indexKey, key] = await Promise.all([
-    crypto.subtle.deriveKey(params('site-icons:index:v1'), root,
-      { name: 'HMAC', hash: 'SHA-256', length: 256 }, false, ['sign']),
+    deriveIndexKey(root),
     crypto.subtle.deriveKey(params('site-icons:data:v1'), root,
       { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']),
   ]);
-  const id = base64UrlEncode(await crypto.subtle.sign('HMAC', indexKey, encoder.encode(rpId)));
-  return { id, key };
+  return { id: await recordId(indexKey, rpId), key };
 }
 
 function isIconRecord(value: unknown): value is IconRecord {
@@ -124,12 +135,29 @@ export async function readIcon(rpId: string): Promise<IconEntry | null> {
   return unseal(keys, await access<unknown>('icons', 'readonly', (store) => store.get(keys.id)));
 }
 
+// Writes only while enabled, in one transaction
+async function putWhileEnabled(id: string, record: IconRecord, expected?: { record: unknown }): Promise<boolean> {
+  let written = false;
+  await transact(['preferences', 'icons'], 'readwrite', (transaction) => {
+    const icons = transaction.objectStore('icons');
+    const enabled = transaction.objectStore('preferences').get('enabled');
+    enabled.onsuccess = () => {
+      if (enabled.result !== true) return;
+      const current = icons.get(id);
+      current.onsuccess = () => {
+        if (expected && version(current.result) !== version(expected.record)) return;
+        icons.put(record, id);
+        written = true;
+      };
+    };
+  });
+  return written;
+}
+
 export async function writeIcon(rpId: string, dataUrl: string): Promise<boolean> {
   const keys = await cacheKeys(rpId);
   if (!keys) return false;
-  const record = await seal(keys, dataUrl);
-  await access('icons', 'readwrite', (store) => store.put(record, keys.id));
-  return true;
+  return putWhileEnabled(keys.id, await seal(keys, dataUrl));
 }
 
 // Never overwrites an icon
@@ -139,15 +167,23 @@ export async function markIconMissing(rpId: string): Promise<boolean> {
   const current = await access<unknown>('icons', 'readonly', (store) => store.get(keys.id));
   const entry = await unseal(keys, current);
   if (entry && 'dataUrl' in entry) return false;
-  const record = await seal(keys, `missing:${Date.now()}`);
-  let written = false;
-  await transact('icons', 'readwrite', (store) => {
-    const request = store.get(keys.id);
+  return putWhileEnabled(keys.id, await seal(keys, `missing:${Date.now()}`), { record: current });
+}
+
+// Keeps icons of stored passkeys only
+export async function pruneIcons(): Promise<void> {
+  const root = await getRootKeyIfAvailable();
+  const rpIds = root ? await getAllRpIds() : null;
+  if (!root || !rpIds) return;
+  const indexKey = await deriveIndexKey(root);
+  const keep = new Set(await Promise.all([...rpIds].map((rpId) => recordId(indexKey, rpId))));
+  await transact(['icons'], 'readwrite', (transaction) => {
+    const store = transaction.objectStore('icons');
+    const request = store.getAllKeys();
     request.onsuccess = () => {
-      if (version(request.result) !== version(current)) return;
-      store.put(record, keys.id);
-      written = true;
+      for (const id of request.result) {
+        if (typeof id !== 'string' || !keep.has(id)) store.delete(id);
+      }
     };
   });
-  return written;
 }

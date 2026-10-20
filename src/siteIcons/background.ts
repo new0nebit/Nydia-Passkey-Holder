@@ -3,9 +3,26 @@ import browser from 'browser-api';
 import { BackgroundMessage } from '../types';
 import { canonicalRpIdForOrigin, getWebAuthnSenderOrigin, iconDomain } from '../utils/rpId';
 import { isSiteIcon } from './image';
-import { iconsEnabled, markIconMissing, readIcon, setIconsEnabled, writeIcon } from './storage';
+import { iconsEnabled, markIconMissing, pruneIcons, readIcon, setIconsEnabled, writeIcon } from './storage';
 
 const MISSING_RETRY_MS = 30 * 24 * 60 * 60 * 1000;
+
+let pruning: Promise<void> | null = null;
+let pruneAgain = false;
+
+// After the reply, one pass at a time
+function schedulePrune(): void {
+  if (pruning) {
+    pruneAgain = true;
+    return;
+  }
+  pruning = (async () => {
+    do {
+      pruneAgain = false;
+      await pruneIcons();
+    } while (pruneAgain);
+  })().catch(() => {}).finally(() => { pruning = null; });
+}
 
 function isMenu(sender: unknown): boolean {
   if (!sender || typeof sender !== 'object' || !('url' in sender) || typeof sender.url !== 'string') {
@@ -35,7 +52,9 @@ export async function handleSiteIconMessage(message: BackgroundMessage, sender: 
   }
 
   if (menu && message.type === 'getSiteIcon' && message.rpId === undefined) {
-    return { enabled: await iconsEnabled() };
+    const enabled = await iconsEnabled();
+    if (enabled) schedulePrune();
+    return { enabled };
   }
 
   // Content scripts: own RP only
