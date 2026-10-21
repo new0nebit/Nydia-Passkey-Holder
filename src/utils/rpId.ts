@@ -1,4 +1,4 @@
-import { getPublicSuffix } from 'tldts';
+import { getPublicSuffix, parse } from 'tldts';
 
 const TLDTS_OPTIONS = {
   allowPrivateDomains: true,
@@ -132,4 +132,12 @@ export function canonicalRpIdForOrigin(rpId: unknown, origin: string): string | 
   if (hostPublicSuffix === id || hostPublicSuffix.endsWith(`.${id}`)) return null;
 
   return id;
+}
+
+const ICON_DOMAIN_OPTIONS = { ...TLDTS_OPTIONS, detectSpecialUse: true } as const;
+
+// Domain for Google, or null for local names
+export function iconDomain(rpId: string): string | null {
+  const { domain, isIcann, isPrivate, isSpecialUse } = parse(rpId, ICON_DOMAIN_OPTIONS);
+  return (isIcann || isPrivate) && !isSpecialUse ? domain : null;
 }

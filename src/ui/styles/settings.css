@@ -1,26 +1,94 @@
 /* ================================= */
-/* Renterd settings */
+/* Settings */
 /* ================================= */
 
-#settings-form {
-  background-color: white;
-  border-radius: 8px;
-  padding: 12px 12px 0 8px;
-  margin-bottom: 8px;
+.settings-title {
+  margin: 0;
+  padding: 4px 8px 14px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  border-bottom: 1px solid rgb(229, 231, 235);
 }
 
-/* A strip across the form, above the buttons */
+.settings-navigation {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 8px 4px;
+  border-top: 1px solid rgb(229, 231, 235);
+}
+
+.icon-settings {
+  padding: 10px 8px 12px;
+}
+
+.icon-setting-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* Checkbox as a switch */
+.icon-setting-label input {
+  order: 1;
+  flex-shrink: 0;
+  appearance: none;
+  width: 32px;
+  height: 18px;
+  margin: 0;
+  border-radius: 9px;
+  background-color: rgb(209, 213, 219);
+  background-image: radial-gradient(circle, white 7px, transparent 7.5px);
+  background-size: 18px 18px;
+  background-repeat: no-repeat;
+  background-position: left center;
+  cursor: pointer;
+  transition: background-color 0.2s, background-position 0.2s;
+}
+
+.icon-setting-label input:checked {
+  background-color: rgb(59, 130, 246);
+  background-position: right center;
+}
+
+.icon-setting-label input:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline-offset: 2px;
+}
+
+.icon-setting-description {
+  margin: 6px 44px 0 0;
+  color: rgb(107, 114, 128);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Address and port in one row */
+#settings-form {
+  display: grid;
+  grid-template-columns: 1fr 96px;
+  gap: 14px 8px;
+  background-color: white;
+  padding: 10px 8px 0;
+}
+
+/* Rests on the divider above the buttons */
 .unsaved-changes {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 4px -12px -8px -8px;
+  margin: 0 -8px -20px;
   padding: 9px 12px;
   font-size: 13px;
   color: rgb(30, 64, 175);
   background-color: rgb(239, 246, 255);
   border-top: 1px solid rgb(191, 219, 254);
-  border-bottom: 1px solid rgb(191, 219, 254);
 }
 
 /* The info icon, drawn in the text color */
@@ -42,37 +110,46 @@
   white-space: nowrap;
 }
 
-.access-request + .unsaved-changes {
-  margin-top: 12px;
-}
-
 .field-container {
-  margin-bottom: 12px;
+  grid-column: 1 / -1;
 }
 
-.field-container:last-child {
-  margin-bottom: 4px;
+.field-container:has(input[name="serverAddress"]) {
+  grid-column: 1;
+}
+
+.field-container:has(input[name="serverPort"]) {
+  grid-column: 2;
 }
 
 .field-container label {
   display: block;
-  font-size: 14px;
+  margin-bottom: 6px;
+  color: rgb(55, 65, 81);
+  font-size: 13px;
   font-weight: 500;
-  margin-bottom: 4px;
 }
 
 .field-container input {
   width: 100%;
-  padding: 6px 8px;
+  height: 34px;
+  padding: 0 10px;
   font-size: 14px;
+  color: inherit;
+  background-color: white;
   border: 1px solid rgb(209, 213, 219);
   border-radius: 6px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.field-container input:hover {
+  border-color: rgb(156, 163, 175);
 }
 
 .field-container input:focus {
   outline: none;
   border-color: rgb(59, 130, 246);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
 }
 
 .button-blue {
@@ -92,17 +169,20 @@
 }
 
 .button-container {
+  grid-column: 1 / -1;
   display: flex;
   justify-content: center;
   gap: 8px;
-  margin-top: 24px;
+  margin: 6px -8px 0;
+  padding: 14px 8px 4px;
+  border-top: 1px solid rgb(229, 231, 235);
 }
 
 .access-request {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 4px;
   padding: 10px 12px;
   font-size: 13px;
   color: rgb(154, 52, 18);
@@ -124,18 +204,41 @@
 /* Dark theme */
 /* ================================= */
 @media (prefers-color-scheme: dark) {
+  .settings-title,
+  .settings-navigation,
+  .button-container {
+    border-color: #444444;
+  }
+
+  .icon-setting-label input {
+    background-color: #555555;
+    background-image: radial-gradient(circle, #f0f0f0 7px, transparent 7.5px);
+  }
+
+  .icon-setting-label input:checked {
+    background-color: #1976d2;
+  }
+
+  .icon-setting-description {
+    color: #aaa;
+  }
+
   #settings-form {
     background-color: #2e2e2e;
   }
 
   .field-container label {
-    color: #f0f0f0;
+    color: #d0d0d0;
   }
 
   .field-container input {
     background-color: #1e1e1e;
     color: #f0f0f0;
     border: 1px solid #555555;
+  }
+
+  .field-container input:hover {
+    border-color: #6a6a6a;
   }
 
   .field-container input:focus {

@@ -51,6 +51,7 @@ export function startBackground(authenticator, store = { async getRootKeyIfAvail
     './logger': quiet,
     './store': store,
     './sia': {},
+    './siteIcons/background': {},
   });
   assert.equal(typeof listener, 'function', 'background listener was not registered');
   return browser;
@@ -89,7 +90,7 @@ export function startPage({ browser, showPopup, native, globals = {} }) {
     'browser-api': browser,
     './logger': quiet,
     './utils/domError': domError,
-    './popup/pageIcon': { async readCachedPageIcon() { return null; } },
+    './siteIcons/client': { async getPageSiteIcon() { return undefined; } },
     './popup/shadowHost': { showPopup },
   };
   for (const entry of ['dispatcher', 'injector']) {

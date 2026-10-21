@@ -2,6 +2,7 @@ import browser from 'browser-api';
 
 import { logDebug } from './logger';
 import { serializeError, toDomException } from './utils/domError';
+import { getPageSiteIcon } from './siteIcons/client';
 import { showPopup } from './popup/shadowHost';
 import { PopupInitPayload } from './popup/messages';
 import {
@@ -110,6 +111,7 @@ class WebAuthnInterceptor {
         rpId,
         userName,
         accounts,
+        pageIconDataUrl: await getPageSiteIcon(rpId),
       };
 
       // Display the custom popup for user interaction

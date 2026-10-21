@@ -106,6 +106,13 @@ html, body {
   border-bottom: 1px solid #F3F4F6;
 }
 
+.nydia-popup-domain-favicon {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
 .nydia-popup-domain-icon {
   width: 28px;
   height: 28px;

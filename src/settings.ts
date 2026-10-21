@@ -12,6 +12,7 @@ import {
   WRONG_PASSWORD,
 } from './renterd';
 import { RenterdSettings } from './types';
+import { iconSettings } from './siteIcons/settings';
 
 export interface NotificationDisplayer {
   showNotification(type: NotificationType, title: string, message: string): void;
@@ -94,19 +95,50 @@ function discardDraft(): Promise<void> {
   });
 }
 
-// Show settings form
-export async function showSettingsForm(): Promise<void> {
+function settingsPage(title: string): HTMLElement | null {
   const passkeyList = document.getElementById('passkey-list');
-  if (!passkeyList) {
-    return;
-  }
+  if (!passkeyList) return null;
 
-  const existingHeader = document.querySelector('.header-container');
-  if (existingHeader) {
-    existingHeader.remove();
-  }
+  document.querySelector('.header-container')?.remove();
+  passkeyList.replaceChildren();
 
-  passkeyList.innerHTML = '';
+  const heading = document.createElement('h2');
+  heading.className = 'settings-title';
+  heading.textContent = title;
+  passkeyList.appendChild(heading);
+  return passkeyList;
+}
+
+export async function showSettingsForm(): Promise<void> {
+  const passkeyList = settingsPage('Settings');
+  if (!passkeyList) return;
+
+  passkeyList.appendChild(await iconSettings(() => {
+    notify('error', 'Error', 'Failed to save website icon setting.');
+  }));
+
+  const buttons = document.createElement('div');
+  buttons.className = 'settings-navigation';
+
+  const renterd = document.createElement('button');
+  renterd.type = 'button';
+  renterd.className = 'button button-blue';
+  renterd.textContent = 'Renterd Settings';
+  renterd.onclick = () => { void showRenterdSettings(); };
+
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'button button-gray';
+  back.textContent = 'Back';
+  back.onclick = () => onSettingsComplete?.();
+
+  buttons.append(renterd, back);
+  passkeyList.appendChild(buttons);
+}
+
+export async function showRenterdSettings(): Promise<void> {
+  const passkeyList = settingsPage('Renterd Settings');
+  if (!passkeyList) return;
 
   const form = document.createElement('form');
   form.id = 'settings-form';
@@ -185,10 +217,7 @@ export async function showSettingsForm(): Promise<void> {
   cancelButton.onclick = () => {
     void discardDraft();
     void keepSavedServerAccessOnly();
-    // Call handler instead of reloading the page
-    if (onSettingsComplete) {
-      onSettingsComplete();
-    }
+    void showSettingsForm();
   };
 
   buttonContainer.appendChild(testButton);

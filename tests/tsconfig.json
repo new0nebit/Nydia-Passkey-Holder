@@ -17,6 +17,10 @@
     "../src/utils/domError.ts",
     "../src/utils/rpId.ts",
     "../src/dispatcher.ts",
-    "../src/injector.ts"
+    "../src/injector.ts",
+    "../src/popup/pageIcon.ts",
+    "../src/siteIcons/menu.ts",
+    "../src/siteIcons/settings.ts",
+    "../src/siteIcons/storage.ts"
   ]
 }

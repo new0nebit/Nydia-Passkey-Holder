@@ -257,6 +257,34 @@ export async function getAllCredentialsMetadata(): Promise<CredentialMetadata[]>
   return metadataList;
 }
 
+// Null unless every record decrypts
+export async function getAllRpIds(): Promise<Set<string> | null> {
+  if (!(await getRootKeyIfAvailable())) return null;
+
+  const db = await openDB();
+  const encryptedRecords = await new Promise<EncryptedRecord[]>((resolve, reject) => {
+    const request = db
+      .transaction(PASSKEY_STORE, 'readonly')
+      .objectStore(PASSKEY_STORE)
+      .getAll() as IDBRequest<EncryptedRecord[]>;
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error('Failed to read passkeys'));
+  });
+
+  const metadataKey = await deriveMetadataKey();
+  const rpIds = new Set<string>();
+  for (const record of encryptedRecords) {
+    try {
+      const { rpId } = await openEnvelope<MetadataPayload>(metadataKey, record.metadata);
+      if (typeof rpId !== 'string') return null;
+      rpIds.add(rpId);
+    } catch {
+      return null;
+    }
+  }
+  return rpIds;
+}
+
 export async function getCredentialsMetadataByUniqueIds(
   uniqueIds: string[],
 ): Promise<CredentialMetadata[]> {

@@ -9,10 +9,13 @@ import {
   getSettings,
   setNotificationDisplayer,
   setOnSettingsComplete,
+  showRenterdSettings,
   showSettingsForm,
   validateSettings,
 } from './settings';
 import { CredentialMetadata, RenterdSettings } from './types';
+import { getSiteIcon } from './siteIcons/client';
+import { watchMenuSiteIcon } from './siteIcons/menu';
 
 type NotificationType = 'success' | 'error' | 'info' | 'warning';
 type ModalType = 'confirm';
@@ -28,28 +31,6 @@ interface SyncDownloadResult {
   empty: boolean;
   error: boolean;
   wrongPassword?: boolean;
-}
-
-// Domain Sanitisation
-function sanitizeDomain(domain: string): string {
-  const cleaned = domain.toLowerCase().match(/[a-z0-9.-]+/)?.[0] ?? '';
-
-  return cleaned.replace(/^\.+|\.+$/g, '');
-}
-
-// Domain extraction
-function getBaseDomain(rpId: string): string {
-  const sanitized = sanitizeDomain(rpId);
-  if (!sanitized) return rpId;
-
-  const parts = sanitized.split('.');
-  if (parts.length <= 2) return sanitized;
-
-  if (parts[parts.length - 2].length <= 3) {
-    return parts.slice(-3).join('.');
-  }
-
-  return parts.slice(-2).join('.');
 }
 
 function createSvgElement(svgString: string): SVGElement | null {
@@ -202,52 +183,24 @@ function resetSyncButton(button: HTMLButtonElement): void {
   updateButtonContent(button, icons.sia, 'Sync Passkeys');
 }
 
-// Website icon creation
-function createSiteIcon(rpId: string): HTMLElement {
+function createSiteIcon(rpId: string, enabled: boolean): HTMLElement {
   const icon = create('div', ['site-icon']);
   icon.setAttribute('aria-hidden', 'true');
+  const globe = createSvgElement(icons.globe);
+  if (globe) icon.appendChild(globe);
+  if (!enabled) return icon;
 
-  // Add inline SVG globe as fallback
-  const globeSvg = createSvgElement(icons.globe);
-  if (globeSvg) icon.appendChild(globeSvg);
-
-  // Get the base domain and encode for URLs
-  const baseDomain = getBaseDomain(rpId);
-  const url = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(baseDomain)}&sz=64`;
-
-  void fetch(url)
-    .then((response) => (response.ok ? response.blob() : null))
-    .then((blob) => {
-      if (!blob || !icon.isConnected) return;
-
-      const objectUrl = URL.createObjectURL(blob);
-      const img = create('img', ['site-icon-img']);
-      img.alt = `${rpId} icon`;
-      img.decoding = 'async';
-      img.src = objectUrl;
-
-      img.addEventListener(
-        'load',
-        () => {
-          if (icon.isConnected) {
-            icon.appendChild(img);
-            icon.classList.add('site-icon--has-favicon');
-          }
-          URL.revokeObjectURL(objectUrl);
-        },
-        { once: true },
-      );
-
-      img.addEventListener(
-        'error',
-        () => {
-          URL.revokeObjectURL(objectUrl);
-        },
-        { once: true },
-      );
-    })
-    .catch(() => {});
-
+  watchMenuSiteIcon(icon, rpId, (dataUrl) => {
+    const image = create('img', ['site-icon-img']);
+    image.alt = `${rpId} icon`;
+    image.decoding = 'async';
+    image.addEventListener('load', () => {
+      if (!icon.isConnected) return;
+      icon.appendChild(image);
+      icon.classList.add('site-icon--has-favicon');
+    }, { once: true });
+    image.src = dataUrl;
+  });
   return icon;
 }
 
@@ -288,7 +241,7 @@ export class Menu {
     // Reopen settings that were not saved, as when the access prompt closed
     // the popup.
     if (await getDraft()) {
-      await showSettingsForm();
+      await showRenterdSettings();
       return;
     }
 
@@ -312,9 +265,10 @@ export class Menu {
         .sendMessage({ type: 'getAllCredentialsMetadata' })
         .catch(() => []);
 
-      const [credentialsRaw, settings] = await Promise.all([
+      const [credentialsRaw, settings, iconState] = await Promise.all([
         credentialsPromise,
         getSettings(),
+        getSiteIcon().catch(() => ({ enabled: false })),
       ]);
       this.settings = settings;
 
@@ -330,7 +284,7 @@ export class Menu {
       passkeyList.innerHTML = '';
 
       if (credentials.length) {
-        credentials.forEach((credential) => passkeyList.appendChild(this.passkeyItem(credential)));
+        credentials.forEach((credential) => passkeyList.appendChild(this.passkeyItem(credential, iconState.enabled)));
       } else if (settings) {
         this.stateView(passkeyList, {
           title: 'Ready to Sync Passkeys',
@@ -347,7 +301,7 @@ export class Menu {
           icon: icons.settings,
           label: 'Renterd Settings',
           buttonClass: 'button-green',
-          action: () => showSettingsForm(),
+          action: () => showRenterdSettings(),
         });
       }
     } catch (error) {
@@ -443,7 +397,7 @@ export class Menu {
           toggle();
         }
       }),
-      createButton(icons.settings, 'Renterd Settings', ['menu-item'], () => {
+      createButton(icons.settings, 'Settings', ['menu-item'], () => {
         void showSettingsForm();
         toggle();
       }),
@@ -483,11 +437,11 @@ export class Menu {
     parent.appendChild(box);
   }
 
-  private passkeyItem(passkey: CredentialMetadata): HTMLLIElement {
+  private passkeyItem(passkey: CredentialMetadata, iconsEnabled: boolean): HTMLLIElement {
     const listItem = create('li', ['passkey-item']);
 
     const site = create('div', ['site-info']);
-    const icon = createSiteIcon(passkey.rpId);
+    const icon = createSiteIcon(passkey.rpId, iconsEnabled);
     const siteText = create('span', [], passkey.rpId.replace(/^www\./, ''));
     site.append(icon, siteText);
 

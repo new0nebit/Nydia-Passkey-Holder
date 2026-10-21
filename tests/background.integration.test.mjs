@@ -82,6 +82,7 @@ const loggerMock = {
 
 const backgroundMocks = new Map([
   ['browser-api', browserMock],
+  ['./siteIcons/background', { async handleSiteIconMessage() { throw new Error('Unexpected icon request'); } }],
   ['./authenticator', authenticatorMock],
   ['./logger', loggerMock],
   ['./sia', siaMock],

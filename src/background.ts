@@ -30,6 +30,7 @@ import {
 import { toArrayBuffer } from './utils/buffer';
 import { serializeError } from './utils/domError';
 import { canonicalRpIdForOrigin, getWebAuthnSenderOrigin } from './utils/rpId';
+import { handleSiteIconMessage } from './siteIcons/background';
 
 // RSA wrapping key pair for secure key transfer
 let wrappingKeyPair: CryptoKeyPair | null = null;
@@ -308,6 +309,12 @@ async function handleStoreWrappedKey(wrappedKey: unknown) {
 async function router(message: BackgroundMessage, sender: unknown): Promise<unknown> {
   try {
     switch (message.type) {
+      case 'getSiteIcon':
+      case 'saveSiteIcon':
+      case 'markSiteIconMissing':
+      case 'setSiteIconsEnabled':
+        return await handleSiteIconMessage(message, sender);
+
       case 'validateRpId': {
         const caller = requireTrustedSender('validateRpId', sender);
         if ('error' in caller) return caller;

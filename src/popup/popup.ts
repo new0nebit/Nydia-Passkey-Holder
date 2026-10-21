@@ -122,7 +122,7 @@ function initPopup(sessionId: string, payload: PopupInitPayload, port: MessagePo
 
   logDebug('[Popup] Initializing iframe popup');
 
-  const { operationType, rpId, userName = '', accounts = [] } = payload;
+  const { operationType, rpId, userName = '', accounts = [], pageIconDataUrl } = payload;
   const isCreateMode = operationType === 'create';
 
   // Create overlay backdrop
@@ -164,6 +164,16 @@ function initPopup(sessionId: string, payload: PopupInitPayload, port: MessagePo
   const domainIconBox = createElement('div', 'nydia-popup-domain-icon');
   const globeSvg = createSvgElement(icons.globe);
   if (globeSvg) domainIconBox.appendChild(globeSvg);
+
+  // Local icon only, no request
+  if (pageIconDataUrl?.startsWith('data:image/')) {
+    const icon = document.createElement('img');
+    icon.className = 'nydia-popup-domain-favicon';
+    icon.alt = '';
+    icon.decoding = 'async';
+    icon.onload = () => domainIconBox.replaceChildren(icon);
+    icon.src = pageIconDataUrl;
+  }
 
   const domainText = createElement('div', 'nydia-popup-domain-text');
   const domainName = createElement('div', 'nydia-popup-domain-name', rpId);
