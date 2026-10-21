@@ -26,7 +26,7 @@ export function isSiteIcon(value: unknown): value is string {
 }
 
 // Stops at the size limit
-async function readLimited(response: Response): Promise<Uint8Array | null> {
+async function readLimited(response: Response): Promise<Uint8Array<ArrayBuffer> | null> {
   if (Number(response.headers.get('content-length')) > MAX_ICON_BYTES) {
     await response.body?.cancel();
     return null;
@@ -46,6 +46,17 @@ async function readLimited(response: Response): Promise<Uint8Array | null> {
   return new Uint8Array(await new Blob(chunks).arrayBuffer());
 }
 
+async function decodes(bytes: Uint8Array<ArrayBuffer>, type: string): Promise<boolean> {
+  // createImageBitmap rejects SVG
+  if (type === 'image/svg+xml') return true;
+  try {
+    (await createImageBitmap(new Blob([bytes], { type }))).close();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function imageDataUrl(response: Response): Promise<string | null> {
   const type = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase();
   if (!response.ok || !type?.startsWith('image/')) return null;
@@ -54,5 +65,5 @@ export async function imageDataUrl(response: Response): Promise<string | null> {
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
   const dataUrl = `data:${type};base64,${btoa(binary)}`;
-  return isSiteIcon(dataUrl) ? dataUrl : null;
+  return isSiteIcon(dataUrl) && await decodes(bytes, type) ? dataUrl : null;
 }

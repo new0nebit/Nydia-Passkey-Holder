@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 
+globalThis.createImageBitmap = async () => ({ close() {} });
 const source = readFileSync(new URL('../.test-build/popup/pageIcon.js', import.meta.url), 'utf8');
 const images = createRequire(import.meta.url)('../.test-build/siteIcons/image.js');
 const PNG = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6xkAAAAASUVORK5CYII='), (character) => character.charCodeAt(0));
