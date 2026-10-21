@@ -14,7 +14,7 @@ export type PopupInitPayload = {
   userName?: string;
   accounts?: Account[];
   // Cached or saved site icon
-  pageIconDataUrl?: string;
+  siteIconDataUrl?: string;
 };
 
 export type PopupInitMessage = {

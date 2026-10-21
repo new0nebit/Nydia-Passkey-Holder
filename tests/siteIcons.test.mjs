@@ -107,7 +107,7 @@ function pageIcons({ enabled, stored = null, cached = null }) {
     '../popup/pageIcon': { async readCachedPageIcon() { cacheReads++; return cached; } },
     './image': images,
   }, { async fetch() { networkCalls++; return new Response(imageBytes, { headers: { 'content-type': 'image/png' } }); } });
-  return { read: client.getPageSiteIcon, messages, get cacheReads() { return cacheReads; }, get networkCalls() { return networkCalls; } };
+  return { read: client.getConfirmationIcon, messages, get cacheReads() { return cacheReads; }, get networkCalls() { return networkCalls; } };
 }
 
 test('authentication icons: disabled preference skips even the browser cache', async () => {
@@ -268,7 +268,7 @@ test('website icons: only recognised image formats count as icons', () => {
     ['image/svg+xml', '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"></svg>'],
     ['image/png', '\x89PNG\r\n\x1a\nrest'],
   ]) {
-    assert.equal(images.isSiteIcon(dataUrl(type, bytes)), true, type);
+    assert.equal(images.isIconDataUrl(dataUrl(type, bytes)), true, type);
   }
   for (const [type, bytes] of [
     ['image/png', 'not an image'],
@@ -276,7 +276,7 @@ test('website icons: only recognised image formats count as icons', () => {
     ['image/png', '<svg xmlns="http://www.w3.org/2000/svg"></svg>'],
     ['image/svg+xml', '<html><body>Not found</body></html>'],
   ]) {
-    assert.equal(images.isSiteIcon(dataUrl(type, bytes)), false, `${type}: ${bytes}`);
+    assert.equal(images.isIconDataUrl(dataUrl(type, bytes)), false, `${type}: ${bytes}`);
   }
 });
 
@@ -326,7 +326,7 @@ test('authentication icons: a stalled lookup cannot hold up the confirmation win
     },
     clearTimeout() {},
   });
-  assert.equal(await client.getPageSiteIcon('example.com'), undefined);
+  assert.equal(await client.getConfirmationIcon('example.com'), undefined);
 });
 
 test('website icons: a Google miss is reported for 30 days, then retried', async () => {

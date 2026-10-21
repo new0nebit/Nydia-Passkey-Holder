@@ -11,7 +11,7 @@ function isImageData(subtype: string, bytes: string): boolean {
   return SIGNATURES.some((signature) => bytes.startsWith(signature));
 }
 
-export function isSiteIcon(value: unknown): value is string {
+export function isIconDataUrl(value: unknown): value is string {
   if (typeof value !== 'string' || value.length > Math.ceil(MAX_ICON_BYTES / 3) * 4 + 128) {
     return false;
   }
@@ -65,5 +65,5 @@ export async function imageDataUrl(response: Response): Promise<string | null> {
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
   const dataUrl = `data:${type};base64,${btoa(binary)}`;
-  return isSiteIcon(dataUrl) && await decodes(bytes, type) ? dataUrl : null;
+  return isIconDataUrl(dataUrl) && await decodes(bytes, type) ? dataUrl : null;
 }

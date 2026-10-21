@@ -90,7 +90,7 @@ export function startPage({ browser, showPopup, native, globals = {} }) {
     'browser-api': browser,
     './logger': quiet,
     './utils/domError': domError,
-    './siteIcons/client': { async getPageSiteIcon() { return undefined; } },
+    './siteIcons/client': { async getConfirmationIcon() { return undefined; } },
     './popup/shadowHost': { showPopup },
   };
   for (const entry of ['dispatcher', 'injector']) {
