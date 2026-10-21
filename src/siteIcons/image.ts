@@ -25,15 +25,34 @@ export function isSiteIcon(value: unknown): value is string {
   }
 }
 
-export async function imageDataUrl(response: Response): Promise<string | null> {
-  if (!response.ok || !response.headers.get('content-type')?.toLowerCase().startsWith('image/')) {
+// Stops at the size limit
+async function readLimited(response: Response): Promise<Uint8Array | null> {
+  if (Number(response.headers.get('content-length')) > MAX_ICON_BYTES) {
+    await response.body?.cancel();
     return null;
   }
-  const blob = await response.blob();
-  if (!blob.size || blob.size > MAX_ICON_BYTES) return null;
-  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const reader = response.body?.getReader();
+  if (!reader) return null;
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
+  let size = 0;
+  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+    size += chunk.value.byteLength;
+    if (size > MAX_ICON_BYTES) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(chunk.value);
+  }
+  return new Uint8Array(await new Blob(chunks).arrayBuffer());
+}
+
+export async function imageDataUrl(response: Response): Promise<string | null> {
+  const type = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase();
+  if (!response.ok || !type?.startsWith('image/')) return null;
+  const bytes = await readLimited(response);
+  if (!bytes?.length) return null;
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  const dataUrl = `data:${blob.type.split(';')[0].trim()};base64,${btoa(binary)}`;
+  const dataUrl = `data:${type};base64,${btoa(binary)}`;
   return isSiteIcon(dataUrl) ? dataUrl : null;
 }

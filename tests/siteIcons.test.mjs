@@ -271,6 +271,29 @@ test('website icons: only recognised image formats count as icons', () => {
   }
 });
 
+test('website icons: reading stops at the size limit', async () => {
+  let pulls = 0;
+  let cancellations = 0;
+  // 8 MiB in 16 KiB chunks
+  const large = () => new ReadableStream({
+    pull(controller) {
+      if (++pulls > 512) controller.close();
+      else controller.enqueue(new Uint8Array(16 * 1024));
+    },
+    cancel() { cancellations++; },
+  }, { highWaterMark: 0 });
+  assert.equal(await images.imageDataUrl(new Response(large(), { headers: { 'content-type': 'image/png' } })), null);
+  assert.equal(pulls, 5);
+  assert.equal(cancellations, 1);
+
+  pulls = 0;
+  cancellations = 0;
+  const declared = new Response(large(), { headers: { 'content-type': 'image/png', 'content-length': '8388608' } });
+  assert.equal(await images.imageDataUrl(declared), null);
+  assert.equal(pulls, 0);
+  assert.equal(cancellations, 1);
+});
+
 test('authentication icons: a stalled lookup cannot hold up the confirmation window', async () => {
   const client = load('client', {
     'browser-api': { runtime: { sendMessage: () => new Promise(() => {}) } },
