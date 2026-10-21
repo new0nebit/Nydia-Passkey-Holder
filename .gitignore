@@ -132,3 +132,6 @@ dist
 
 # Extension builds
 build/
+
+# Xcode user data
+xcuserdata/
