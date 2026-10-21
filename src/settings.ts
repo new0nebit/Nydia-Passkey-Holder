@@ -109,7 +109,7 @@ function settingsPage(title: string): HTMLElement | null {
   return passkeyList;
 }
 
-export async function showSettingsForm(): Promise<void> {
+export async function showSettings(): Promise<void> {
   const passkeyList = settingsPage('Settings');
   if (!passkeyList) return;
 
@@ -217,7 +217,7 @@ export async function showRenterdSettings(): Promise<void> {
   cancelButton.onclick = () => {
     void discardDraft();
     void keepSavedServerAccessOnly();
-    void showSettingsForm();
+    void showSettings();
   };
 
   buttonContainer.appendChild(testButton);

@@ -10,7 +10,7 @@ import {
   setNotificationDisplayer,
   setOnSettingsComplete,
   showRenterdSettings,
-  showSettingsForm,
+  showSettings,
   validateSettings,
 } from './settings';
 import { CredentialMetadata, RenterdSettings } from './types';
@@ -398,7 +398,7 @@ export class Menu {
         }
       }),
       createButton(icons.settings, 'Settings', ['menu-item'], () => {
-        void showSettingsForm();
+        void showSettings();
         toggle();
       }),
     );
