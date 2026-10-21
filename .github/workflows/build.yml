@@ -45,8 +45,8 @@ jobs:
         run: |
           mkdir Nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}
           mkdir Nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}
-          cp -r extension/chrome/* Nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}/
-          cp -r extension/firefox/* Nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}/
+          cp -r build/chrome/* Nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}/
+          cp -r build/firefox/* Nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}/
           zip -r Nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip Nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}
           zip -r Nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip Nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}
 

@@ -12,7 +12,7 @@ export default (env, argv) => {
   const keepDebugLogs = env?.keepDebug === true || env?.keepDebug === 'true';
 
   // Set output directory based on browser target
-  const outputDir = path.join('extension', target);
+  const outputDir = path.join('build', target);
 
   return {
     entry: {

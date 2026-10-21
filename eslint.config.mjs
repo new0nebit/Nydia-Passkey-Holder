@@ -5,7 +5,7 @@ import tseslint from "typescript-eslint";
 /** @type {import('eslint').Linter.Config[]} */
 export default tseslint.config(
   {
-    ignores: ["node_modules/", "extension/", "dist/"]
+    ignores: ["node_modules/", "build/", "dist/"]
   },
   {
     languageOptions: {
