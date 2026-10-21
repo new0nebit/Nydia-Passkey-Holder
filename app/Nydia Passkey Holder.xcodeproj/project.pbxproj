@@ -63,6 +63,12 @@
 			path = "Nydia Extension";
 			sourceTree = "<group>";
 		};
+		AFD89B302DABAB5B00A8A103 /* safari */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			name = safari;
+			path = ../build/safari;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -88,6 +94,7 @@
 			children = (
 				AFD89AF12DABAB5A00A8A103 /* Nydia */,
 				AFD89B0F2DABAB5B00A8A103 /* Nydia Extension */,
+				AFD89B302DABAB5B00A8A103 /* safari */,
 				AFD89AF02DABAB5A00A8A103 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -142,6 +149,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				AFD89B0F2DABAB5B00A8A103 /* Nydia Extension */,
+				AFD89B302DABAB5B00A8A103 /* safari */,
 			);
 			name = "Nydia Passkey Holder Extension";
 			packageProductDependencies = (

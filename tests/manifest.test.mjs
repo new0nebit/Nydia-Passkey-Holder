@@ -11,7 +11,9 @@ function manifest(name) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-for (const name of ['manifest.chrome.json', 'manifest.firefox.json']) {
+const MANIFESTS = ['manifest.chrome.json', 'manifest.firefox.json', 'manifest.safari.json'];
+
+for (const name of MANIFESTS) {
   test(`${name} exposes Nydia to secure origins and localhost only`, () => {
     const parsed = manifest(name);
 
@@ -33,7 +35,8 @@ test('renterd servers are requested at runtime, never granted up front', () => {
   assert.deepEqual(manifest('manifest.chrome.json').optional_host_permissions, origins);
   // Firefox before 128 reads optional hosts from optional_permissions.
   assert.deepEqual(manifest('manifest.firefox.json').optional_permissions, origins);
-  for (const name of ['manifest.chrome.json', 'manifest.firefox.json']) {
+  assert.deepEqual(manifest('manifest.safari.json').optional_host_permissions, origins);
+  for (const name of MANIFESTS) {
     assert.equal(manifest(name).host_permissions, undefined);
   }
 });
