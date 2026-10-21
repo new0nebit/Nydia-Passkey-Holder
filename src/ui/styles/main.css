@@ -11,3 +11,8 @@
 
 /* Settings page styles (loaded last to have highest precedence) */
 @import 'settings.css';
+
+/* Use system color theme */
+:root {
+  color-scheme: light dark;
+}
