@@ -14,8 +14,6 @@ const SAVED_ORIGINS = ['http://192.0.2.10/*', 'https://192.0.2.10/*'];
 const OLD_ORIGINS = ['http://192.0.2.20/*', 'https://192.0.2.20/*'];
 const MANIFEST_ORIGINS = ['https://*/*', 'http://localhost/*'];
 
-// The hosts Nydia recorded as asked for, as local storage keeps them.
-const tracked = (...hosts) => new Map(hosts.map((host) => [`renterdAccess:${host}`, true]));
 const settle = () => new Promise((resolve) => setTimeout(resolve));
 
 function load(file, imports, globals = {}, extra = '') {
@@ -36,12 +34,11 @@ function load(file, imports, globals = {}, extra = '') {
 // lets a test hold the answer back, as when the prompt closes the popup.
 // granted is what the browser allows, and an allowed prompt adds to it.
 // held lists the origins the browser reports as granted, manifest ones
-// included. local holds the hosts Nydia asked access to. saved is what
-// getSettings answers, and saveResult a save's answer, or a function to hold
-// it back.
+// included. saved is what getSettings answers, and saveResult a save's
+// answer, or a function to hold it back.
 function browserMock({
   grant = true, granted = false, held = [], saved = SAVED, saveResult = { status: 'ok' },
-  local = new Map(), scheme = 'chrome-extension',
+  scheme = 'chrome-extension',
 } = {}) {
   const calls = [];
   const api = {
@@ -80,28 +77,9 @@ function browserMock({
         return `${scheme}://nydia/${path}`;
       },
     },
-    storage: {
-      local: {
-        get(keys) {
-          assert.equal(keys, null);
-          calls.push(['tracked']);
-          return Promise.resolve(Object.fromEntries(local));
-        },
-        set(items) {
-          calls.push(['track', ...Object.keys(items)]);
-          for (const [key, value] of Object.entries(items)) local.set(key, value);
-          return Promise.resolve();
-        },
-        remove(keys) {
-          calls.push(['untrack', ...[keys].flat()]);
-          for (const key of [keys].flat()) local.delete(key);
-          return Promise.resolve();
-        },
-      },
-    },
   };
   return {
-    api, calls, local,
+    api, calls,
     held: () => held,
     setSaved: (settings) => { saved = settings; },
     types: () => calls.map(([type]) => type),
@@ -272,6 +250,28 @@ function vault(stored) {
   return { store, database: indexedDB.databases.get('NydiaDB'), saved: () => settings.get('renterdSettings') };
 }
 
+function connectBackground(browser, store) {
+  let listener;
+  browser.api.runtime.onMessage = { addListener(value) { listener = value; } };
+  load('background', {
+    'browser-api': browser.api,
+    './authenticator': {},
+    './logger': logger,
+    './renterd': renterd(browser),
+    './sia': {},
+    './store': store,
+    './utils/buffer': {},
+    './utils/domError': require('../.test-build/utils/domError.js'),
+    './utils/rpId': {},
+    './siteIcons/background': {},
+  }, { crypto });
+  browser.api.runtime.sendMessage = (message) => {
+    browser.calls.push([message.type, message.settings]);
+    return listener(message, {});
+  };
+  return browser.api.runtime.sendMessage;
+}
+
 test('renterd access: only the configured host is requested, over both schemes', async () => {
   const access = renterd(browserMock());
   assert.deepEqual([...access.renterdOrigins('192.0.2.10')], ['http://192.0.2.10/*', 'https://192.0.2.10/*']);
@@ -303,7 +303,7 @@ test('Save never prompts and stays on the form, offering Allow access only witho
   // No access, and the prompt never answers, as when it has closed the popup.
   const page = await settingsPage({ browser: browserMock({ grant: () => new Promise(() => {}) }) });
   await submit(page.form);
-  assert.deepEqual(page.browser.types(), ['saveSettings', 'tracked', 'contains']);
+  assert.deepEqual(page.browser.types(), ['saveSettings', 'contains']);
   assert.deepEqual(page.notices, [['success', 'Success!', 'Settings saved successfully.']]);
   assert.equal(page.completed(), 0);
 
@@ -312,8 +312,7 @@ test('Save never prompts and stays on the form, offering Allow access only witho
   assert.equal(page.form.children.indexOf(request) + 1, page.form.children.indexOf(page.form.byClass('button-container')));
 
   void page.form.button('Allow access').onclick();
-  // Recording the host starts in the same click, before the prompt can close the popup.
-  assert.deepEqual(page.browser.calls.slice(-2), [['access', ...SAVED_ORIGINS], ['track', 'renterdAccess:192.0.2.10']]);
+  assert.deepEqual(page.browser.calls.at(-1), ['access', ...SAVED_ORIGINS]);
 
   // The request was for the saved address, so editing takes it away.
   type(page.form, 'serverAddress', 'renterd.example.com');
@@ -347,36 +346,102 @@ test('Allow access after Save stays on the form, allowed or refused', async () =
   }
 });
 
-test('Save takes back only the access Nydia asked for other servers, never other access', async () => {
-  const tested = ['http://typo.example/*', 'https://typo.example/*'];
+test('saving another server takes back access to the previous one only', async () => {
   // A site the user allowed for passkeys, and the manifest's own patterns.
   const other = ['https://example.com/*', ...MANIFEST_ORIGINS];
-  const browser = browserMock({
-    granted: true,
-    held: [...OLD_ORIGINS, ...tested, ...SAVED_ORIGINS, ...other, 'https://localhost/*'],
-    local: tracked('192.0.2.20', 'typo.example', 'localhost', '192.0.2.10'),
-  });
+  const browser = browserMock({ granted: true, held: [...SAVED_ORIGINS, ...OLD_ORIGINS, ...other] });
+  connectBackground(browser, vault(SAVED).store);
   const page = await settingsPage({ browser });
+  type(page.form, 'serverAddress', '192.0.2.20');
   await submit(page.form);
-  assert.deepEqual(browser.held(), [...SAVED_ORIGINS, ...other]);
-  assert.deepEqual([...browser.local.keys()], ['renterdAccess:192.0.2.10']);
+  // https://*/* in the manifest keeps the https origin.
+  assert.deepEqual(browser.calls.filter(([type]) => type === 'remove'), [['remove', 'http://192.0.2.10/*']]);
+  assert.deepEqual(browser.held(), ['https://192.0.2.10/*', ...OLD_ORIGINS, ...other]);
+
+  // The same server keeps its access, and nothing is even looked up.
+  const same = browserMock({ granted: true, held: [...SAVED_ORIGINS] });
+  connectBackground(same, vault(SAVED).store);
+  const again = await settingsPage({ browser: same });
+  type(again.form, 'password', 'changed');
+  await submit(again.form);
+  assert.deepEqual(same.held(), SAVED_ORIGINS);
+  assert.ok(!same.types().includes('getAll'));
+});
+
+test('background takes back old access without waiting for the popup to receive the save response', async () => {
+  const browser = browserMock({ held: [...SAVED_ORIGINS, ...OLD_ORIGINS, ...MANIFEST_ORIGINS] });
+  const { store, saved } = vault(SAVED);
+  const send = connectBackground(browser, store);
+  let backgroundDone;
+  browser.api.runtime.sendMessage = (message) => {
+    // Keep the response pending, as if the popup had closed.
+    backgroundDone = send(message);
+    return new Promise(() => {});
+  };
+  void browser.api.runtime.sendMessage({ type: 'saveSettings', settings: { ...SAVED, serverAddress: '192.0.2.20' } });
+  assert.equal((await backgroundDone).status, 'ok');
+  assert.equal(saved().serverAddress, '192.0.2.20');
+  assert.deepEqual(browser.held(), ['https://192.0.2.10/*', ...OLD_ORIGINS, ...MANIFEST_ORIGINS]);
+});
+
+test('background keeps old access on a failed commit and still handles the next save', async () => {
+  const browser = browserMock({ held: [...SAVED_ORIGINS] });
+  const { store, database, saved } = vault(SAVED);
+  const send = connectBackground(browser, store);
+  database.failCommit = true;
+  const settings = { ...SAVED, serverAddress: '192.0.2.20' };
+  assert.match((await send({ type: 'saveSettings', settings })).error, /Commit failed/);
+  assert.equal(saved().serverAddress, SAVED.serverAddress);
+  assert.deepEqual(browser.held(), SAVED_ORIGINS);
+  assert.ok(!browser.types().includes('remove'));
+
+  database.failCommit = false;
+  assert.equal((await send({ type: 'saveSettings', settings })).status, 'ok');
+  assert.deepEqual(browser.held(), ['https://192.0.2.10/*']);
+});
+
+test('background serialises server changes through the previous access cleanup', async () => {
+  const last = ['http://192.0.2.30/*', 'https://192.0.2.30/*'];
+  const browser = browserMock({ held: [...SAVED_ORIGINS, ...OLD_ORIGINS, ...last] });
+  const { store, saved } = vault(SAVED);
+  const send = connectBackground(browser, store);
+  const remove = browser.api.permissions.remove;
+  let started;
+  let finish;
+  const cleaning = new Promise((resolve) => { started = resolve; });
+  browser.api.permissions.remove = async (options) => {
+    started();
+    await new Promise((resolve) => { finish = resolve; });
+    return remove(options);
+  };
+  const first = send({ type: 'saveSettings', settings: { ...SAVED, serverAddress: '192.0.2.20' } });
+  await cleaning;
+  const second = send({ type: 'saveSettings', settings: { ...SAVED, serverAddress: '192.0.2.30' } });
+  await settle();
+  assert.equal(saved().serverAddress, '192.0.2.20');
+  browser.api.permissions.remove = remove;
+  finish();
+  assert.deepEqual((await Promise.all([first, second])).map((result) => result.status), ['ok', 'ok']);
+  assert.equal(saved().serverAddress, '192.0.2.30');
+  assert.deepEqual(browser.held(), ['https://192.0.2.10/*', 'https://192.0.2.20/*', ...last]);
 });
 
 test('a failed save stays on the form, keeps the input and takes no access away', async () => {
-  const browser = browserMock({ held: [...OLD_ORIGINS], local: tracked('192.0.2.20'), saveResult: { error: 'Disk full' } });
+  const browser = browserMock({ held: [...SAVED_ORIGINS], saveResult: { error: 'Disk full' } });
   const page = await settingsPage({ browser });
+  type(page.form, 'serverAddress', '192.0.2.20');
   type(page.form, 'bucketName', 'other');
   await submit(page.form);
   assert.deepEqual(page.notices, [['error', 'Error!', 'Failed to save settings.']]);
   assert.equal(page.completed(), 0);
   assert.equal(page.value('bucketName'), 'other');
   assert.equal(inactive(page.button), true);
-  assert.deepEqual(browser.held(), OLD_ORIGINS);
+  assert.deepEqual(browser.held(), SAVED_ORIGINS);
   assert.ok(!browser.types().includes('remove'));
 });
 
 test('Back leaves the form and takes no access away', async () => {
-  const browser = browserMock({ held: [...OLD_ORIGINS, ...SAVED_ORIGINS], local: tracked('192.0.2.20', '192.0.2.10') });
+  const browser = browserMock({ held: [...OLD_ORIGINS, ...SAVED_ORIGINS] });
   const page = await settingsPage({ browser });
   type(page.form, 'serverAddress', 'renterd.example.com');
   page.form.button('Back').onclick();
@@ -386,31 +451,27 @@ test('Back leaves the form and takes no access away', async () => {
   assert.ok(!browser.types().includes('saveSettings'));
 });
 
-test('without a saved server, all the access Nydia asked for goes', async () => {
-  const none = browserMock({ held: [...SAVED_ORIGINS, ...MANIFEST_ORIGINS], local: tracked('192.0.2.10', 'localhost') });
-  await renterd(none).keepRenterdAccessOnly(null);
-  assert.deepEqual(none.held(), MANIFEST_ORIGINS);
-  assert.equal(none.local.size, 0);
-});
+test('access a manifest pattern covers is never taken back, and a refusal is only logged', async () => {
+  const browser = browserMock({ held: [...OLD_ORIGINS, 'http://localhost/*', 'https://localhost/*'] });
+  await renterd(browser).removeRenterdAccess('192.0.2.20');
+  await renterd(browser).removeRenterdAccess('localhost');
+  assert.deepEqual(browser.calls.filter(([type]) => type === 'remove'), [['remove', 'http://192.0.2.20/*']]);
+  assert.deepEqual(browser.held(), ['https://192.0.2.20/*', 'http://localhost/*', 'https://localhost/*']);
 
-test('an origin the browser refuses to remove does not keep the rest, and is only logged', async () => {
-  const browser = browserMock({ held: [...OLD_ORIGINS], local: tracked('192.0.2.20') });
-  const remove = browser.api.permissions.remove;
-  browser.api.permissions.remove = (options) => options.origins[0].startsWith('http:')
-    ? Promise.reject(new Error('You cannot remove required permissions.'))
-    : remove(options);
-  await renterd(browser).keepRenterdAccessOnly('192.0.2.10');
-  assert.deepEqual(browser.held(), ['http://192.0.2.20/*']);
-  assert.equal(browser.local.size, 0);
+  // Never granted: nothing to take back.
+  const never = browserMock({ held: [...MANIFEST_ORIGINS] });
+  await renterd(never).removeRenterdAccess('192.0.2.20');
+  assert.ok(!never.types().includes('remove'));
 
-  const clean = browserMock({ held: [...SAVED_ORIGINS], local: tracked('192.0.2.10') });
-  await renterd(clean).keepRenterdAccessOnly('192.0.2.10');
-  assert.ok(!clean.types().includes('getAll'));
+  const refusing = browserMock({ held: [...OLD_ORIGINS] });
+  refusing.api.permissions.remove = () => Promise.reject(new Error('You cannot remove required permissions.'));
+  await renterd(refusing).removeRenterdAccess('192.0.2.20');
+  assert.deepEqual(refusing.held(), OLD_ORIGINS);
 });
 
 test('the address takes one form, in lower case, wherever it is saved, asked for or kept', async () => {
   const origins = ['http://renterd.example/*', 'https://renterd.example/*'];
-  const browser = browserMock({ held: [...origins], local: tracked('renterd.example') });
+  const browser = browserMock({ held: [...origins] });
   const page = await settingsPage({ browser });
   type(page.form, 'serverAddress', ' RENTERD.Example ');
   await submit(page.form);
@@ -420,7 +481,19 @@ test('the address takes one form, in lower case, wherever it is saved, asked for
 
   await page.form.button('Allow access').onclick();
   assert.deepEqual(browser.calls.find(([type]) => type === 'access'), ['access', ...origins]);
-  assert.ok(browser.local.has('renterdAccess:renterd.example'));
+
+  // Older settings may contain mixed-case host names.
+  const mixed = { ...SAVED, serverAddress: 'Renterd.EXAMPLE' };
+  const kept = browserMock({ held: [...origins], saved: mixed });
+  connectBackground(kept, vault(mixed).store);
+  await submit((await settingsPage({ browser: kept })).form);
+  assert.deepEqual(kept.held(), origins);
+  const replaced = browserMock({ held: [...origins], saved: mixed });
+  connectBackground(replaced, vault(mixed).store);
+  const changed = await settingsPage({ browser: replaced });
+  type(changed.form, 'serverAddress', '192.0.2.10');
+  await submit(changed.form);
+  assert.deepEqual(replaced.held(), ['https://renterd.example/*']);
 });
 
 test('the form is locked while it is saved', async () => {
@@ -445,8 +518,8 @@ test('Allow access closes the popup in Firefox, where the prompt opens under it,
     const page = await settingsPage({ browser });
     await submit(page.form);
     void page.form.button('Allow access').onclick();
-    // The request goes out, and recording its host starts, before the popup closes.
-    assert.deepEqual(browser.types().slice(-3), closes ? ['access', 'track', 'close'] : ['contains', 'access', 'track']);
+    // The request goes out before the popup closes.
+    assert.deepEqual(browser.types().slice(-2), closes ? ['access', 'close'] : ['contains', 'access']);
   }
 });
 
@@ -648,7 +721,7 @@ test('Test Connection never prompts: without access it offers Allow access, and 
   assert.equal(inactive(page.button), false);
 
   const allowed = page.form.button('Allow access').onclick();
-  assert.deepEqual(page.browser.calls.slice(-2), [['access', ...SAVED_ORIGINS], ['track', 'renterdAccess:192.0.2.10']]);
+  assert.deepEqual(page.browser.calls.at(-1), ['access', ...SAVED_ORIGINS]);
   await allowed;
   assert.equal(page.requests.length, 1);
   assert.deepEqual(page.notices, [['success', 'Success!', 'Connection successful.']]);

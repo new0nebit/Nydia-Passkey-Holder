@@ -4,7 +4,6 @@ import {
   canonicalAddress,
   detectProtocol,
   hasRenterdAccess,
-  keepRenterdAccessOnly,
   noAccessMessage,
   RENTERD_ADDRESS,
   requestRenterdAccess,
@@ -320,8 +319,6 @@ export async function showRenterdSettings(): Promise<void> {
       saved = result;
       fill(result);
       accessRequest?.remove();
-      await keepRenterdAccessOnly(result.serverAddress);
-
       if (!(await hasRenterdAccess(result.serverAddress))) {
         showAccessRequest(result.serverAddress, () => {
           accessRequest?.remove();
