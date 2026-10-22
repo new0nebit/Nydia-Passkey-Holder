@@ -5,9 +5,6 @@
   "version_name": "1.0.0-beta.2",
   "description": "Passkey storage on the Sia network. Hold your passkeys locally with decentralized backup.",
   "author": "Oleh N.",
-  "permissions": [
-    "storage"
-  ],
   "optional_host_permissions": [
     "http://*/*",
     "https://*/*"
