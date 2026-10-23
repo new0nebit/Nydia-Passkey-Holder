@@ -85,6 +85,7 @@ const backgroundMocks = new Map([
   ['./siteIcons/background', { async handleSiteIconMessage() { throw new Error('Unexpected icon request'); } }],
   ['./authenticator', authenticatorMock],
   ['./logger', loggerMock],
+  ['./renterd', {}],
   ['./sia', siaMock],
   ['./store', storeMock],
 ]);

@@ -18,23 +18,13 @@ export function renterdOrigins(address: string): string[] {
   return [`http://${host}/*`, `https://${host}/*`];
 }
 
-// Hosts Nydia asked access to for renterd, one storage key each, so that a
-// click records one without reading first: the prompt may close the popup
-// before a read returns.
-const REQUESTED_HOST = 'renterdAccess:';
-
 // Must be called before any await in a click handler: browsers show the
 // prompt only during a user gesture. Resolves to false if access is refused.
 export function requestRenterdAccess(address: string): Promise<boolean> {
-  const granted = browser.permissions.request({ origins: renterdOrigins(address) }).catch((error: unknown) => {
+  return browser.permissions.request({ origins: renterdOrigins(address) }).catch((error: unknown) => {
     logError('[Renterd] Permission request failed', error);
     return false;
   });
-  // Recorded even if refused: removal only takes what was granted.
-  browser.storage.local.set({ [REQUESTED_HOST + canonicalAddress(address)]: true }).catch((error: unknown) => {
-    logError('[Renterd] Failed to record the requested server', error);
-  });
-  return granted;
 }
 
 // Resolves to false if access was never granted or the check failed.
@@ -45,39 +35,25 @@ export function hasRenterdAccess(address: string): Promise<boolean> {
   });
 }
 
-// Takes back the access Nydia asked for renterd servers other than the saved
-// one, or for all of them without one, so it does not pile up as the server
-// changes or other addresses are tested. Access Nydia did not ask for, such as
-// a site the user allowed for passkeys, is not touched. Neither is a pattern
-// the manifest declares, even for a requested host: the content script needs it.
-export async function keepRenterdAccessOnly(address: string | null): Promise<void> {
-  try {
-    const keep = address ? canonicalAddress(address) : null;
-    const hosts = Object.keys(await browser.storage.local.get(null))
-      .filter((key) => key.startsWith(REQUESTED_HOST))
-      .map((key) => key.slice(REQUESTED_HOST.length))
-      .filter((host) => host !== keep);
-    if (!hosts.length) return;
+// The pattern itself, or any host under a scheme://*/* wildcard
+function inManifest(origin: string, patterns: string[]): boolean {
+  return patterns.some((pattern) =>
+    pattern === origin || (pattern.endsWith('://*/*') && origin.startsWith(pattern.slice(0, -'*/*'.length))));
+}
 
+// Keep manifest access needed by content scripts.
+export async function removeRenterdAccess(address: string): Promise<void> {
+  try {
     const manifest = browser.runtime.getManifest();
-    const declared = new Set([
+    const patterns = [
       ...(manifest.content_scripts ?? []).flatMap((script) => script.matches ?? []),
       ...(manifest.host_permissions ?? []),
-    ]);
+    ];
     const { origins: granted = [] } = await browser.permissions.getAll();
-    const stale = hosts
-      .filter((host) => RENTERD_ADDRESS.test(host))
-      .flatMap(renterdOrigins)
-      .filter((origin) => granted.includes(origin) && !declared.has(origin));
-    // One at a time, so an origin the browser refuses does not stop the rest.
-    for (const origin of stale) {
-      await browser.permissions.remove({ origins: [origin] }).catch((error: unknown) => {
-        logError('[Renterd] Failed to remove access to an old server', error);
-      });
-    }
-    await browser.storage.local.remove(hosts.map((host) => REQUESTED_HOST + host));
+    const stale = renterdOrigins(address).filter((origin) => granted.includes(origin) && !inManifest(origin, patterns));
+    if (stale.length) await browser.permissions.remove({ origins: stale });
   } catch (error: unknown) {
-    logError('[Renterd] Failed to remove access to other servers', error);
+    logError('[Renterd] Failed to remove access to the old server', error);
   }
 }
 

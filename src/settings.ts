@@ -1,11 +1,9 @@
 import browser from 'browser-api';
 
-import { logError } from './logger';
 import {
   canonicalAddress,
   detectProtocol,
   hasRenterdAccess,
-  keepRenterdAccessOnly,
   noAccessMessage,
   RENTERD_ADDRESS,
   requestRenterdAccess,
@@ -64,41 +62,30 @@ const FIELDS = [
   { label: 'Bucket Name', name: 'bucketName', type: 'text' },
 ];
 
-// The access prompt closes the popup, so input that is not saved yet is kept
-// as a draft until Save or Back. Session storage holds it in memory only and
-// drops it when the browser exits.
-const DRAFT_KEY = 'renterdSettingsDraft';
+// Set when Allow access may close the popup
+const REOPEN_KEY = 'nydiaReopenRenterdSettings';
 
-type Draft = Record<string, unknown>;
+const HINT_DELAY_MS = 200;
 
-export async function getDraft(): Promise<Draft | null> {
-  try {
-    const draft = (await browser.storage.session.get(DRAFT_KEY))[DRAFT_KEY];
-    return draft && typeof draft === 'object' ? (draft as Draft) : null;
-  } catch (error: unknown) {
-    logError('[Settings] Failed to read the draft', error);
-    return null;
-  }
+// True once, for the popup opened after the prompt
+export function takeRenterdReopen(): boolean {
+  const reopen = localStorage.getItem(REOPEN_KEY) === 'true';
+  localStorage.removeItem(REOPEN_KEY);
+  return reopen;
 }
 
-function storeDraft(form: HTMLFormElement): void {
-  const formData = new FormData(form);
-  const draft = Object.fromEntries(FIELDS.map(({ name }) => [name, (formData.get(name) as string | null) ?? '']));
-  browser.storage.session.set({ [DRAFT_KEY]: draft }).catch((error: unknown) => {
-    logError('[Settings] Failed to store the draft', error);
-  });
+function sameSettings(a: RenterdSettings, b: RenterdSettings): boolean {
+  return a.serverAddress === b.serverAddress && a.serverPort === b.serverPort &&
+    a.password === b.password && a.bucketName === b.bucketName;
 }
 
-function discardDraft(): Promise<void> {
-  return browser.storage.session.remove(DRAFT_KEY).catch((error: unknown) => {
-    logError('[Settings] Failed to discard the draft', error);
-  });
-}
+let settingsView = 0;
 
 function settingsPage(title: string): HTMLElement | null {
   const passkeyList = document.getElementById('passkey-list');
   if (!passkeyList) return null;
 
+  settingsView += 1;
   document.querySelector('.header-container')?.remove();
   passkeyList.replaceChildren();
 
@@ -139,6 +126,7 @@ export async function showSettings(): Promise<void> {
 export async function showRenterdSettings(): Promise<void> {
   const passkeyList = settingsPage('Renterd Settings');
   if (!passkeyList) return;
+  const view = settingsView;
 
   const form = document.createElement('form');
   form.id = 'settings-form';
@@ -169,41 +157,125 @@ export async function showRenterdSettings(): Promise<void> {
     form.appendChild(fieldContainer);
   }
 
-  // Load the unsaved draft, or else the saved settings, into the form
-  let existingSettings = await getSettings();
-  const draft = await getDraft();
-  const values: Draft | null = draft ?? (existingSettings && {
-    ...existingSettings,
-    serverPort: existingSettings.serverPort.toString(),
-  });
-  for (const { name } of FIELDS) {
-    const value = values?.[name];
-    if (typeof value === 'string') (form.elements.namedItem(name) as HTMLInputElement).value = value;
-  }
-
-  // A draft looks like saved settings, so say that it is not.
-  let unsavedNotice = draft ? unsavedNoticeView() : null;
+  let saved = await getSettings();
+  if (view !== settingsView) return;
+  const fill = (settings: RenterdSettings): void => {
+    for (const { name } of FIELDS) {
+      (form.elements.namedItem(name) as HTMLInputElement).value = String(settings[name as keyof RenterdSettings] ?? '');
+    }
+  };
+  if (saved) fill(saved);
 
   let accessRequest: HTMLElement | null = null;
-  form.addEventListener('input', () => {
-    accessRequest?.remove();
-    storeDraft(form);
-  });
 
   const buttonContainer = document.createElement('div');
   buttonContainer.className = 'button-container';
 
   const testButton = document.createElement('button');
   testButton.type = 'button';
-  testButton.textContent = 'Test Connection';
   testButton.className = 'button button-indigo';
-  // A test that needs access first shows Allow access, and runs again once
-  // access is allowed and the popup is still open.
+  const hint = document.createElement('span');
+  hint.className = 'save-hint';
+  hint.id = 'save-hint';
+  hint.setAttribute('role', 'tooltip');
+  const testConnectionGroup = document.createElement('span');
+  testConnectionGroup.className = 'test-connection';
+  testConnectionGroup.append(testButton, hint);
+  let testRevision = 0;
+  let testing = false;
+
+  function invalidateTest(): void {
+    testRevision += 1;
+    testing = false;
+  }
+
+  // Tests only saved settings: Allow access may close the popup
+  const ready = (): boolean => saved !== null && sameSettings(getSettingsFromForm(form), saved);
+
+  // Shown after a short hover, on focus or on a click, until Esc
+  let hovered = false;
+  let clicked = false;
+  let dismissed = false;
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  function updateHint(): void {
+    const open = !ready() && !dismissed && (hovered || clicked || document.activeElement === testButton);
+    testConnectionGroup.classList.toggle('hint-open', open);
+    buttonContainer.classList.toggle('hint-open', open);
+  }
+
+  // aria-disabled, not disabled: the hint needs hover and focus
+  function updateTestButton(): void {
+    const unsaved = !ready();
+    // Nothing saved yet means no changes either
+    hint.textContent = saved ? 'Unsaved changes. Save to test.' : 'Save your settings to test.';
+    testButton.setAttribute('aria-disabled', String(testing || unsaved));
+    testButton.textContent = testing ? 'Testing...' : 'Test Connection';
+    if (unsaved) testButton.setAttribute('aria-describedby', hint.id);
+    else testButton.removeAttribute('aria-describedby');
+    updateHint();
+  }
+  // Runs again once access is allowed, if the popup is still open
   const test = async (): Promise<void> => {
+    if (!saved || testing || !ready()) return;
+    const revision = ++testRevision;
+    const current = (): boolean => view === settingsView && revision === testRevision;
+    testing = true;
     accessRequest?.remove();
-    await testConnection(form, testButton, (address) => showAccessRequest(address, test));
+    updateTestButton();
+    await testConnection(saved, (address) => showAccessRequest(address, () => {
+      if (current()) return test();
+    }), current);
+    if (!current()) return;
+    testing = false;
+    updateTestButton();
   };
-  testButton.onclick = test;
+  testButton.onclick = () => {
+    if (ready()) return test();
+    clicked = true;
+    dismissed = false;
+    updateHint();
+  };
+
+  testConnectionGroup.addEventListener('pointerenter', () => {
+    clearTimeout(hoverTimer);
+    hoverTimer = setTimeout(() => {
+      hovered = true;
+      dismissed = false;
+      updateHint();
+    }, HINT_DELAY_MS);
+  });
+  testConnectionGroup.addEventListener('pointerleave', () => {
+    clearTimeout(hoverTimer);
+    hovered = false;
+    clicked = false;
+    updateHint();
+  });
+  testButton.addEventListener('focus', () => {
+    dismissed = false;
+    updateHint();
+  });
+  testButton.addEventListener('blur', () => {
+    clicked = false;
+    updateHint();
+  });
+  // Also when the mouse showed it
+  const dismissHint = (event: KeyboardEvent): void => {
+    if (!form.isConnected) {
+      document.removeEventListener('keydown', dismissHint);
+      return;
+    }
+    if (event.key !== 'Escape' || !testConnectionGroup.classList.contains('hint-open')) return;
+    dismissed = true;
+    updateHint();
+  };
+  document.addEventListener('keydown', dismissHint);
+
+  form.addEventListener('input', () => {
+    invalidateTest();
+    clicked = false;
+    accessRequest?.remove();
+    updateTestButton();
+  });
 
   const saveButton = document.createElement('button');
   saveButton.type = 'submit';
@@ -214,28 +286,22 @@ export async function showRenterdSettings(): Promise<void> {
   cancelButton.type = 'button';
   cancelButton.textContent = 'Back';
   cancelButton.className = 'button button-gray';
-  cancelButton.onclick = () => {
-    void discardDraft();
-    void keepSavedServerAccessOnly();
-    void showSettings();
-  };
+  cancelButton.onclick = () => { void showSettings(); };
 
-  buttonContainer.appendChild(testButton);
+  buttonContainer.appendChild(testConnectionGroup);
   buttonContainer.appendChild(saveButton);
   buttonContainer.appendChild(cancelButton);
 
-  if (unsavedNotice) form.appendChild(unsavedNotice);
   form.appendChild(buttonContainer);
+  updateTestButton();
 
-  // Allow access goes above the notice, which stays next to the buttons.
   function showAccessRequest(address: string, onAllowed: () => Promise<void> | void): void {
     accessRequest?.remove();
-    accessRequest = accessRequestView(address, onAllowed);
-    form.insertBefore(accessRequest, unsavedNotice ?? buttonContainer);
+    accessRequest = accessRequestView(address, onAllowed, true);
+    form.insertBefore(accessRequest, buttonContainer);
   }
 
-  // Editing and Back wait until saving and the access cleanup finish, so no
-  // edit is lost with the discarded draft and no cleanup uses stale settings.
+  // Locked until the save and the access cleanup finish
   function lockForm(locked: boolean): void {
     form.querySelectorAll('input').forEach((input) => { input.readOnly = locked; });
     form.querySelectorAll('button').forEach((button) => { button.disabled = locked; });
@@ -245,63 +311,38 @@ export async function showRenterdSettings(): Promise<void> {
   // leaves it.
   form.onsubmit = async (event) => {
     event.preventDefault();
+    invalidateTest();
     lockForm(true);
     try {
-      const saved = await saveSettingsFromForm(form, existingSettings);
-      if (!saved) return;
-      existingSettings = saved;
-      unsavedNotice?.remove();
-      unsavedNotice = null;
+      const result = await saveSettingsFromForm(form, saved);
+      if (!result) return;
+      saved = result;
+      fill(result);
       accessRequest?.remove();
-      await keepRenterdAccessOnly(saved.serverAddress);
-
-      if (!(await hasRenterdAccess(saved.serverAddress))) {
-        showAccessRequest(saved.serverAddress, () => {
+      if (!(await hasRenterdAccess(result.serverAddress))) {
+        showAccessRequest(result.serverAddress, () => {
           accessRequest?.remove();
-          notify('success', 'Success!', `Access to ${saved.serverAddress} allowed.`);
+          notify('success', 'Success!', `Access to ${result.serverAddress} allowed.`);
         });
       }
     } finally {
       lockForm(false);
+      updateTestButton();
     }
   };
 
   passkeyList.appendChild(form);
 }
 
-// Tries to take back access to addresses tested but never saved. The saved
-// server is read afresh; if it cannot be read, nothing is taken.
-async function keepSavedServerAccessOnly(): Promise<void> {
-  try {
-    const saved = await getSettings();
-    if (saved !== null && typeof saved?.serverAddress !== 'string') return;
-    await keepRenterdAccessOnly(saved?.serverAddress ?? null);
-  } catch (error: unknown) {
-    logError('[Settings] Failed to read the saved server', error);
-  }
-}
-
-function unsavedNoticeView(): HTMLElement {
-  const notice = document.createElement('p');
-  notice.className = 'unsaved-changes';
-
-  // Each sentence stays whole, so a strip too narrow for both wraps between
-  // them rather than inside the second one.
-  const text = document.createElement('span');
-  const title = document.createElement('strong');
-  title.textContent = 'Unsaved changes.';
-  const hint = document.createElement('span');
-  hint.textContent = 'Press Save to keep them.';
-  text.append(title, ' ', hint);
-
-  notice.appendChild(text);
-  return notice;
-}
-
 // Access is asked for in a click of its own: the prompt can close the popup,
 // so a save must have finished before it opens. Save shows this once the
-// settings are saved, Test Connection instead of testing.
-export function accessRequestView(address: string, onAllowed: () => Promise<void> | void): HTMLElement {
+// settings are saved, Test Connection instead of testing. reopen brings the
+// next popup back to the renterd form.
+export function accessRequestView(
+  address: string,
+  onAllowed: () => Promise<void> | void,
+  reopen = false,
+): HTMLElement {
   const box = document.createElement('div');
   box.className = 'access-request';
 
@@ -312,7 +353,7 @@ export function accessRequestView(address: string, onAllowed: () => Promise<void
   allowButton.type = 'button';
   allowButton.textContent = 'Allow access';
   allowButton.className = 'button button-blue';
-  allowButton.onclick = () => allowAccess(address, allowButton, onAllowed);
+  allowButton.onclick = () => allowAccess(address, allowButton, onAllowed, reopen);
 
   box.append(text, allowButton);
   return box;
@@ -322,12 +363,17 @@ async function allowAccess(
   address: string,
   allowButton: HTMLButtonElement,
   onAllowed: () => Promise<void> | void,
+  reopen: boolean,
 ): Promise<void> {
   const access = requestRenterdAccess(address);
+  if (reopen) localStorage.setItem(REOPEN_KEY, 'true');
   if (promptOpensUnderPopup()) window.close();
   allowButton.disabled = true;
 
-  if (await access) {
+  const granted = await access;
+  // Still open: nothing to reopen
+  localStorage.removeItem(REOPEN_KEY);
+  if (granted) {
     await onAllowed();
   } else {
     notify('error', 'Error!', noAccessMessage(address));
@@ -337,39 +383,35 @@ async function allowAccess(
 
 // Chrome closes the popup when it shows the access prompt. Firefox shows the
 // prompt under the popup instead, where it cannot be answered until the popup
-// is closed, so the popup closes itself there; the draft keeps what was typed.
-// Closing it in Chrome could cancel a prompt not shown yet.
+// is closed, so the popup closes itself there. Closing it in Chrome could
+// cancel a prompt not shown yet.
 function promptOpensUnderPopup(): boolean {
   return browser.runtime.getURL('').startsWith('moz-extension:');
 }
 
-// Test connection to renterd (only tests, does not save). A server that is
-// not allowed yet goes to needsAccess instead of a prompt.
+// A server that is not allowed yet goes to needsAccess instead of a prompt
 async function testConnection(
-  form: HTMLFormElement,
-  testButton: HTMLButtonElement,
+  settings: RenterdSettings,
   needsAccess: (address: string) => void,
+  current: () => boolean,
 ) {
-  const settings = getSettingsFromForm(form);
   if (!validateSettings(settings)) {
     notify('error', 'Error!', 'Please fill out all fields correctly.');
     return;
   }
 
-  const originalText = testButton.textContent;
-
   try {
-    testButton.textContent = 'Testing...';
-    testButton.disabled = true;
-
-    if (!(await hasRenterdAccess(settings.serverAddress))) {
+    const access = await hasRenterdAccess(settings.serverAddress);
+    if (!current()) return;
+    if (!access) {
       needsAccess(settings.serverAddress);
       return;
     }
     await detectProtocol(settings);
-
+    if (!current()) return;
     notify('success', 'Success!', 'Connection successful.');
   } catch (error: unknown) {
+    if (!current()) return;
     if (error instanceof DOMException && error.name === 'AbortError') {
       notify('error', 'Error!', 'Connection timed out after 2 seconds.');
     } else if (error instanceof Error && error.message === WRONG_PASSWORD) {
@@ -377,9 +419,6 @@ async function testConnection(
     } else {
       notify('error', 'Error!', 'Failed to connect to renterd server.');
     }
-  } finally {
-    testButton.textContent = originalText;
-    testButton.disabled = false;
   }
 }
 
@@ -417,7 +456,6 @@ async function saveSettingsFromForm(
     notify('error', 'Error!', 'Failed to save settings.');
     return null;
   }
-  await discardDraft();
   notify('success', 'Success!', 'Settings saved successfully.');
   return settings;
 }

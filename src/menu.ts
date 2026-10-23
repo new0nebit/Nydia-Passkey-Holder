@@ -5,12 +5,12 @@ import { logError } from './logger';
 import { hasRenterdAccess, WRONG_PASSWORD } from './renterd';
 import {
   accessRequestView,
-  getDraft,
   getSettings,
   setNotificationDisplayer,
   setOnSettingsComplete,
   showRenterdSettings,
   showSettings,
+  takeRenterdReopen,
   validateSettings,
 } from './settings';
 import { CredentialMetadata, RenterdSettings } from './types';
@@ -238,9 +238,8 @@ export class Menu {
       return;
     }
 
-    // Reopen settings that were not saved, as when the access prompt closed
-    // the popup.
-    if (await getDraft()) {
+    // Allow access in the form may have closed the popup
+    if (takeRenterdReopen()) {
       await showRenterdSettings();
       return;
     }

@@ -50,6 +50,7 @@ export function startBackground(authenticator, store = { async getRootKeyIfAvail
     './authenticator': authenticator,
     './logger': quiet,
     './store': store,
+    './renterd': {},
     './sia': {},
     './siteIcons/background': {},
   });

@@ -28,16 +28,6 @@ export type BrowserAPI = {
     getAll: () => Promise<{ origins?: string[] }>;
     remove: (permissions: { origins: string[] }) => Promise<boolean>;
   };
-  storage: {
-    session: StorageArea;
-    local: StorageArea;
-  };
-};
-
-type StorageArea = {
-  get: (keys: string | null) => Promise<Record<string, unknown>>;
-  set: (items: Record<string, unknown>) => Promise<void>;
-  remove: (keys: string | string[]) => Promise<void>;
 };
 
 const resolvedBrowser: BrowserAPI =

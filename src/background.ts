@@ -6,6 +6,7 @@ import {
   handleGetAssertion,
 } from './authenticator';
 import { logDebug, logError, logInfo } from './logger';
+import { canonicalAddress, removeRenterdAccess } from './renterd';
 import {
   downloadPasskeyFromRenterd,
   getRenterdSettings,
@@ -14,6 +15,7 @@ import {
 } from './sia';
 import {
   getEncryptedRecord,
+  getSettings,
   handleMessageInBackground,
   saveEncryptedRecord,
   getRootKeyIfAvailable,
@@ -23,6 +25,7 @@ import {
   BackgroundMessage,
   CredentialCreationOptions,
   GetAssertionOptions,
+  RenterdSettings,
   SerializedCreationOptions,
   SerializedCredentialDescriptor,
   SerializedRequestOptions,
@@ -305,6 +308,27 @@ async function handleStoreWrappedKey(wrappedKey: unknown) {
   }
 }
 
+// Serialize saves so each cleanup uses the server being replaced.
+// Run in the background so cleanup survives popup closure.
+let settingsSave: Promise<unknown> = Promise.resolve();
+
+function handleSaveSettings(message: BackgroundMessage): Promise<unknown> {
+  const saving = settingsSave.then(async () => {
+    const previous = await getSettings();
+    const result = await handleMessageInBackground(message) as { status?: string };
+    if (result?.status === 'ok' && previous) {
+      const settings = message.settings as RenterdSettings;
+      if (canonicalAddress(previous.serverAddress) !== canonicalAddress(settings.serverAddress)) {
+        await removeRenterdAccess(previous.serverAddress);
+      }
+    }
+    return result;
+  });
+  // A failed save must not stop later saves.
+  settingsSave = saving.catch(() => {});
+  return saving;
+}
+
 // Router
 async function router(message: BackgroundMessage, sender: unknown): Promise<unknown> {
   try {
@@ -411,6 +435,9 @@ async function router(message: BackgroundMessage, sender: unknown): Promise<unkn
 
       case 'storeWrappedKey':
         return await handleStoreWrappedKey(message.wrappedKey);
+
+      case 'saveSettings':
+        return await handleSaveSettings(message);
 
       // proxy → store.ts
       default:
