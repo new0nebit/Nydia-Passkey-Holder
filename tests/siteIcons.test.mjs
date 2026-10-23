@@ -7,10 +7,19 @@ import { runInNewContext } from 'node:vm';
 const ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6xkAAAAASUVORK5CYII=';
 const imageBytes = Uint8Array.from(atob(ICON.split(',')[1]), (character) => character.charCodeAt(0));
 
+// Like browsers: SVG and incomplete PNGs are refused
+async function createImageBitmap(blob) {
+  const bytes = new TextDecoder('latin1').decode(await blob.arrayBuffer());
+  if (blob.type === 'image/svg+xml' || (blob.type === 'image/png' && !bytes.includes('IEND'))) {
+    throw new DOMException('The source image could not be decoded.', 'InvalidStateError');
+  }
+  return { close() {} };
+}
+
 function load(name, imports = {}, globals = {}) {
   const context = {
     exports: {}, URL, DOMException, Error, Response, Blob, Uint8Array,
-    AbortController, atob, btoa, setTimeout, clearTimeout,
+    AbortController, atob, btoa, setTimeout, clearTimeout, createImageBitmap,
     require(name) {
       assert.ok(name in imports, `Unexpected import: ${name}`);
       return imports[name];
@@ -98,7 +107,7 @@ function pageIcons({ enabled, stored = null, cached = null }) {
     '../popup/pageIcon': { async readCachedPageIcon() { cacheReads++; return cached; } },
     './image': images,
   }, { async fetch() { networkCalls++; return new Response(imageBytes, { headers: { 'content-type': 'image/png' } }); } });
-  return { read: client.getPageSiteIcon, messages, get cacheReads() { return cacheReads; }, get networkCalls() { return networkCalls; } };
+  return { read: client.getConfirmationIcon, messages, get cacheReads() { return cacheReads; }, get networkCalls() { return networkCalls; } };
 }
 
 test('authentication icons: disabled preference skips even the browser cache', async () => {
@@ -259,7 +268,7 @@ test('website icons: only recognised image formats count as icons', () => {
     ['image/svg+xml', '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"></svg>'],
     ['image/png', '\x89PNG\r\n\x1a\nrest'],
   ]) {
-    assert.equal(images.isSiteIcon(dataUrl(type, bytes)), true, type);
+    assert.equal(images.isIconDataUrl(dataUrl(type, bytes)), true, type);
   }
   for (const [type, bytes] of [
     ['image/png', 'not an image'],
@@ -267,8 +276,41 @@ test('website icons: only recognised image formats count as icons', () => {
     ['image/png', '<svg xmlns="http://www.w3.org/2000/svg"></svg>'],
     ['image/svg+xml', '<html><body>Not found</body></html>'],
   ]) {
-    assert.equal(images.isSiteIcon(dataUrl(type, bytes)), false, `${type}: ${bytes}`);
+    assert.equal(images.isIconDataUrl(dataUrl(type, bytes)), false, `${type}: ${bytes}`);
   }
+});
+
+test('website icons: reading stops at the size limit', async () => {
+  let pulls = 0;
+  let cancellations = 0;
+  // 8 MiB in 16 KiB chunks
+  const large = () => new ReadableStream({
+    pull(controller) {
+      if (++pulls > 512) controller.close();
+      else controller.enqueue(new Uint8Array(16 * 1024));
+    },
+    cancel() { cancellations++; },
+  }, { highWaterMark: 0 });
+  assert.equal(await images.imageDataUrl(new Response(large(), { headers: { 'content-type': 'image/png' } })), null);
+  assert.equal(pulls, 5);
+  assert.equal(cancellations, 1);
+
+  pulls = 0;
+  cancellations = 0;
+  const declared = new Response(large(), { headers: { 'content-type': 'image/png', 'content-length': '8388608' } });
+  assert.equal(await images.imageDataUrl(declared), null);
+  assert.equal(pulls, 0);
+  assert.equal(cancellations, 1);
+});
+
+test('menu icons: an image that does not decode is not saved, unlike SVG', async () => {
+  const icons = menuIcons({ response: () => new Response(imageBytes.slice(0, 8), { headers: { 'content-type': 'image/png' } }) });
+  assert.equal(await icons.loadMenuSiteIcon('example.com'), null);
+  assert.deepEqual(icons.saved, []);
+
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
+  const vector = menuIcons({ response: () => new Response(svg, { headers: { 'content-type': 'image/svg+xml' } }) });
+  assert.equal(await vector.loadMenuSiteIcon('example.com'), `data:image/svg+xml;base64,${btoa(svg)}`);
 });
 
 test('authentication icons: a stalled lookup cannot hold up the confirmation window', async () => {
@@ -284,7 +326,7 @@ test('authentication icons: a stalled lookup cannot hold up the confirmation win
     },
     clearTimeout() {},
   });
-  assert.equal(await client.getPageSiteIcon('example.com'), undefined);
+  assert.equal(await client.getConfirmationIcon('example.com'), undefined);
 });
 
 test('website icons: a Google miss is reported for 30 days, then retried', async () => {

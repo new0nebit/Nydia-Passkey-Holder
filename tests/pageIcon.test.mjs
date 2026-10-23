@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 
+globalThis.createImageBitmap = async () => ({ close() {} });
 const source = readFileSync(new URL('../.test-build/popup/pageIcon.js', import.meta.url), 'utf8');
 const images = createRequire(import.meta.url)('../.test-build/siteIcons/image.js');
 const PNG = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6xkAAAAASUVORK5CYII='), (character) => character.charCodeAt(0));
@@ -24,8 +25,8 @@ function loadIconReader({ candidates = [], fetchResponse, timeout = setTimeout }
   runInNewContext(source, context);
   return { read: context.exports.readCachedPageIcon, calls };
 }
-function cachedImage(bytes = PNG) {
-  return { ok: true, headers: new Headers({ 'content-type': 'image/png' }), async blob() { return new Blob([bytes], { type: 'image/png' }); } };
+function cachedImage(bytes = PNG, { status = 200, type = 'image/png' } = {}) {
+  return new Response(bytes, { status, headers: { 'content-type': type } });
 }
 const SAFE_OPTIONS = { cache: 'only-if-cached', mode: 'same-origin', credentials: 'omit', redirect: 'error' };
 
@@ -60,10 +61,9 @@ test('a cache miss keeps the fallback icon without retrying in a network-enabled
 test('invalid, empty and oversized cached responses are not sent to the popup', async () => {
   const icon = loadIconReader({
     candidates: ['https://example.com/text', 'https://example.com/empty', 'https://example.com/large'],
-    fetchResponse: async (url) => ({
-      ok: !url.endsWith('favicon.ico'),
-      headers: new Headers({ 'content-type': url.endsWith('/text') ? 'text/html' : 'image/png' }),
-      async blob() { return new Blob([url.endsWith('/large') ? new Uint8Array(65537) : '']); },
+    fetchResponse: async (url) => cachedImage(url.endsWith('/large') ? new Uint8Array(65537) : '', {
+      status: url.endsWith('favicon.ico') ? 404 : 200,
+      type: url.endsWith('/text') ? 'text/html' : 'image/png',
     }),
   });
   assert.equal(await icon.read(), null);
@@ -71,13 +71,13 @@ test('invalid, empty and oversized cached responses are not sent to the popup', 
 
 // Each refusal holds on its own
 test('a failed response is refused even with a body within the size limit', async () => {
-  const icon = loadIconReader({ fetchResponse: async () => ({ ...cachedImage(), ok: false }) });
+  const icon = loadIconReader({ fetchResponse: async () => cachedImage(PNG, { status: 500 }) });
   assert.equal(await icon.read(), null);
 });
 
 test('a response that is not an image is refused even with a body of allowed size', async () => {
   const icon = loadIconReader({
-    fetchResponse: async () => ({ ...cachedImage(), headers: new Headers({ 'content-type': 'text/html' }) }),
+    fetchResponse: async () => cachedImage(PNG, { type: 'text/html' }),
   });
   assert.equal(await icon.read(), null);
 });

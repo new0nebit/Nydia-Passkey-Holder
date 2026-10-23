@@ -2,7 +2,7 @@ import browser from 'browser-api';
 
 import { BackgroundMessage } from '../types';
 import { canonicalRpIdForOrigin, getWebAuthnSenderOrigin, iconDomain } from '../utils/rpId';
-import { isSiteIcon } from './image';
+import { isIconDataUrl } from './image';
 import { iconsEnabled, markIconMissing, pruneIcons, readIcon, setIconsEnabled, writeIcon } from './storage';
 
 const MISSING_RETRY_MS = 30 * 24 * 60 * 60 * 1000;
@@ -81,6 +81,6 @@ export async function handleSiteIconMessage(message: BackgroundMessage, sender: 
     };
   }
   if (message.type === 'markSiteIconMissing') return { enabled: true, saved: await markIconMissing(rpId) };
-  if (!isSiteIcon(message.dataUrl)) throw new Error('Invalid website icon');
+  if (!isIconDataUrl(message.dataUrl)) throw new Error('Invalid website icon');
   return { enabled: true, saved: await writeIcon(rpId, message.dataUrl) };
 }

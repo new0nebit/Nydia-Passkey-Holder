@@ -1,6 +1,6 @@
 import { getAllRpIds, getRootKeyIfAvailable } from '../store';
 import { base64UrlEncode } from '../utils/base64url';
-import { isSiteIcon } from './image';
+import { isIconDataUrl } from './image';
 
 // Separate from passkeys and Sia backups
 const DB_NAME = 'NydiaSiteIcons';
@@ -120,7 +120,7 @@ async function unseal(keys: IconKeys, record: unknown): Promise<IconEntry | null
       name: 'AES-GCM', iv: new Uint8Array(record.iv), additionalData: encoder.encode(keys.id),
     }, keys.key, record.data);
     const value = new TextDecoder().decode(plaintext);
-    if (isSiteIcon(value)) return { dataUrl: value };
+    if (isIconDataUrl(value)) return { dataUrl: value };
     const missing = MISSING.exec(value);
     return missing ? { missingSince: Number(missing[1]) } : null;
   } catch {

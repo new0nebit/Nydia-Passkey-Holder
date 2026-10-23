@@ -1,7 +1,7 @@
 import browser from 'browser-api';
 
 import { readCachedPageIcon } from '../popup/pageIcon';
-import { isSiteIcon } from './image';
+import { isIconDataUrl } from './image';
 
 type IconState = {
   enabled: boolean;
@@ -12,14 +12,14 @@ type IconState = {
   saved?: boolean;
 };
 
-const PAGE_ICON_BUDGET_MS = 500;
+const CONFIRMATION_ICON_BUDGET_MS = 500;
 
 export async function getSiteIcon(rpId?: string): Promise<IconState> {
   const result = await browser.runtime.sendMessage({ type: 'getSiteIcon', rpId }) as IconState;
   if (result?.error) throw new Error(result.error);
   return {
     enabled: result?.enabled === true,
-    dataUrl: isSiteIcon(result?.dataUrl) ? result.dataUrl : null,
+    dataUrl: isIconDataUrl(result?.dataUrl) ? result.dataUrl : null,
     missing: result?.missing === true,
     iconDomain: typeof result?.iconDomain === 'string' ? result.iconDomain : null,
   };
@@ -40,22 +40,22 @@ export async function markSiteIconMissing(rpId: string): Promise<void> {
 }
 
 // Never contacts Google
-export async function getPageSiteIcon(rpId: string): Promise<string | undefined> {
+export async function getConfirmationIcon(rpId: string): Promise<string | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const budget = new Promise<undefined>((resolve) => { timer = setTimeout(resolve, PAGE_ICON_BUDGET_MS); });
+  const budget = new Promise<undefined>((resolve) => { timer = setTimeout(resolve, CONFIRMATION_ICON_BUDGET_MS); });
   try {
-    return await Promise.race([readPageSiteIcon(rpId), budget]);
+    return await Promise.race([readConfirmationIcon(rpId), budget]);
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function readPageSiteIcon(rpId: string): Promise<string | undefined> {
+async function readConfirmationIcon(rpId: string): Promise<string | undefined> {
   try {
     const state = await getSiteIcon(rpId);
     if (!state.enabled) return undefined;
     const cached = await readCachedPageIcon();
-    if (isSiteIcon(cached)) {
+    if (isIconDataUrl(cached)) {
       void saveSiteIcon(rpId, cached).catch(() => {});
       return cached;
     }
