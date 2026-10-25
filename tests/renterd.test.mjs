@@ -799,6 +799,29 @@ test('a save replaces settings that cannot be read, through the background', asy
   assert.deepEqual(browser.held(), SAVED_ORIGINS);
 });
 
+test('renterd operations do not log settings, URLs or Authorization headers even with debug logging enabled', async () => {
+  const logs = [];
+  const recordingLogger = { ...logger, logDebug: (...args) => logs.push(args) };
+  const configured = { ...SAVED, password: 'unique-server-password', bucketName: 'unique-backup-bucket', serverProtocol: 'https' };
+  const record = { uniqueId: 'test-passkey', metadata: { iv: 'abc', data: 'def' }, secret: { iv: 'abc', data: 'def' }, isSynced: true };
+  const sia = load('sia', {
+    './logger': recordingLogger,
+    './renterd': {},
+    './store': { async getSettings() { return configured; } },
+  }, {
+    Blob,
+    fetch: async (url) => ({ ok: true, status: 200, json: async () => url.includes('/api/bus/objects/') ? { objects: [] } : record }),
+  });
+  await sia.listPasskeysFromRenterd(configured);
+  assert.equal((await sia.uploadPasskeyDirect(record)).success, true);
+  await sia.downloadPasskeyFromRenterd('test-passkey.passkey', configured);
+  const output = JSON.stringify(logs);
+  assert.ok(logs.length > 0);
+  for (const sensitive of [configured.password, configured.serverAddress, configured.bucketName, 'Authorization', btoa(`username:${configured.password}`)]) {
+    assert.ok(!output.includes(sensitive));
+  }
+});
+
 test('a corrected password does not wait for the check of the old one', async () => {
   const { store } = await vault(SAVED);
   const sent = [];

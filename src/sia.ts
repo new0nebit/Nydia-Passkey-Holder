@@ -115,7 +115,7 @@ async function httpRequest(
   url: string,
   options: RequestInit,
 ): Promise<Response> {
-  logDebug('[Sia] Sending request', { url, options });
+  logDebug('[Sia] Sending request');
   const response = await fetch(url, options);
   logDebug('[Sia] Response status', { status: response.status });
 
@@ -135,7 +135,7 @@ async function httpRequest(
 export async function listPasskeysFromRenterd(
   settings: RenterdSettings,
 ): Promise<string[]> {
-  logDebug('[Sia] Starting listPasskeysFromRenterd', { settings });
+  logDebug('[Sia] Starting listPasskeysFromRenterd');
 
   const response = await httpRequest(buildListURL(settings), {
     method: 'GET',
@@ -160,7 +160,7 @@ async function uploadPasskeyToRenterd(
   settings: RenterdSettings,
 ): Promise<void> {
   const fileName = `${uniqueId}${PASSKEY_EXTENSION}`;
-  logDebug('[Sia] Starting uploadPasskeyToRenterd', { fileName, settings });
+  logDebug('[Sia] Starting uploadPasskeyToRenterd', { fileName });
 
   await httpRequest(buildUploadURL(settings, fileName), {
     method: 'PUT',
@@ -175,7 +175,7 @@ export async function downloadPasskeyFromRenterd(
   fileName: string,
   settings: RenterdSettings,
 ): Promise<EncryptedRecord> {
-  logDebug('[Sia] Starting downloadPasskeyFromRenterd', { fileName, settings });
+  logDebug('[Sia] Starting downloadPasskeyFromRenterd', { fileName });
 
   const response = await httpRequest(buildObjectURL(settings, fileName), {
     method: 'GET',

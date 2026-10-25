@@ -469,7 +469,7 @@ async function router(message: BackgroundMessage, sender: unknown): Promise<unkn
 logInfo('[Background] bootstrap');
 browser.runtime.onMessage.addListener((message: unknown, sender: unknown) => {
   if (!isBackgroundMessage(message)) {
-    logError('[Background] Invalid message format', message);
+    logError('[Background] Invalid message format');
     return Promise.resolve({ error: 'Invalid message format' });
   }
   return router(message, sender);
