@@ -16,10 +16,16 @@ private let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: 
 
 class ViewController: NSViewController, WKNavigationDelegate, WKScriptMessageHandler {
 
-    @IBOutlet var webView: WKWebView!
+    // Built here, not in Main.storyboard: Interface Builder archives WKWebView with private
+    // subviews from the build Mac's WebKit, and macOS versions without them show an empty window.
+    private let webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
 
     override func viewDidLoad() {
         super.viewDidLoad()
+
+        self.webView.frame = self.view.bounds
+        self.webView.autoresizingMask = [.width, .height]
+        self.view.addSubview(self.webView)
 
         self.webView.navigationDelegate = self
 
