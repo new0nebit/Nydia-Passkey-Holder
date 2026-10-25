@@ -209,7 +209,8 @@
   border-top: 1px solid rgb(229, 231, 235);
 }
 
-.access-request {
+.access-request,
+.settings-warning {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
@@ -222,12 +223,14 @@
   border-radius: 6px;
 }
 
-.access-request p {
+.access-request p,
+.settings-warning p {
   flex: 1;
   margin: 0;
 }
 
-.access-request .button {
+.access-request .button,
+.settings-warning .button {
   flex-shrink: 0;
 }
 
@@ -277,7 +280,8 @@
     box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.3);
   }
 
-  .access-request {
+  .access-request,
+  .settings-warning {
     color: #f0f0f0;
     background-color: #653208;
     border-color: #fb923c;

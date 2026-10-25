@@ -49,7 +49,7 @@ export function startBackground(authenticator, store = { async getRootKeyIfAvail
     'browser-api': browser,
     './authenticator': authenticator,
     './logger': quiet,
-    './store': store,
+    './store': { async sealPlaintextSettings() {}, ...store },
     './renterd': {},
     './sia': {},
     './siteIcons/background': {},

@@ -33,7 +33,11 @@ function notify(type: NotificationType, title: string, message: string): void {
 
 // Get settings
 export async function getSettings(): Promise<RenterdSettings | null> {
-  return (await browser.runtime.sendMessage({ type: 'getSettings' })) as RenterdSettings | null;
+  const result = await browser.runtime.sendMessage({ type: 'getSettings' });
+  if (result === undefined || (result && typeof result === 'object' && 'error' in result)) {
+    throw new Error('Unable to load saved renterd settings');
+  }
+  return result as RenterdSettings | null;
 }
 
 // Validate settings fields
@@ -157,7 +161,15 @@ export async function showRenterdSettings(): Promise<void> {
     form.appendChild(fieldContainer);
   }
 
-  let saved = await getSettings();
+  // Settings that cannot be read leave the form empty, and Save replaces them:
+  // a damaged record must not lock the user out of the form.
+  let saved: RenterdSettings | null = null;
+  let unreadable: HTMLElement | null = null;
+  try {
+    saved = await getSettings();
+  } catch {
+    unreadable = unreadableSettingsView();
+  }
   if (view !== settingsView) return;
   const fill = (settings: RenterdSettings): void => {
     for (const { name } of FIELDS) {
@@ -165,6 +177,7 @@ export async function showRenterdSettings(): Promise<void> {
     }
   };
   if (saved) fill(saved);
+  if (unreadable) form.prepend(unreadable);
 
   let accessRequest: HTMLElement | null = null;
 
@@ -318,6 +331,7 @@ export async function showRenterdSettings(): Promise<void> {
       if (!result) return;
       saved = result;
       fill(result);
+      unreadable?.remove();
       accessRequest?.remove();
       if (!(await hasRenterdAccess(result.serverAddress))) {
         showAccessRequest(result.serverAddress, () => {
@@ -332,6 +346,24 @@ export async function showRenterdSettings(): Promise<void> {
   };
 
   passkeyList.appendChild(form);
+}
+
+// Retry reads the settings again, for a failure that has passed
+function unreadableSettingsView(): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'settings-warning';
+
+  const text = document.createElement('p');
+  text.textContent = 'Saved settings could not be read. Enter them again and save to replace them.';
+
+  const retryButton = document.createElement('button');
+  retryButton.type = 'button';
+  retryButton.textContent = 'Retry';
+  retryButton.className = 'button button-blue';
+  retryButton.onclick = () => { void showRenterdSettings(); };
+
+  box.append(text, retryButton);
+  return box;
 }
 
 // Access is asked for in a click of its own: the prompt can close the popup,

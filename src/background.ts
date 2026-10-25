@@ -19,6 +19,7 @@ import {
   handleMessageInBackground,
   saveEncryptedRecord,
   getRootKeyIfAvailable,
+  sealPlaintextSettings,
   setRootKey,
 } from './store';
 import {
@@ -283,6 +284,7 @@ async function handleStoreWrappedKey(wrappedKey: unknown) {
     );
 
     await setRootKey(rootKey);
+    await sealPlaintextSettings().catch((error: unknown) => logError('[Background] Settings migration failed', error));
     wrappingKeyPair = null;
 
     logDebug('[Background] Root key securely stored and RSA keys cleaned up');
@@ -314,7 +316,12 @@ let settingsSave: Promise<unknown> = Promise.resolve();
 
 function handleSaveSettings(message: BackgroundMessage): Promise<unknown> {
   const saving = settingsSave.then(async () => {
-    const previous = await getSettings();
+    // Unreadable settings must not block the save that replaces them; their
+    // server access is then left as it is.
+    const previous = await getSettings().catch((error: unknown) => {
+      logError('[Background] Previous settings unreadable', error);
+      return null;
+    });
     const result = await handleMessageInBackground(message) as { status?: string };
     if (result?.status === 'ok' && previous) {
       const settings = message.settings as RenterdSettings;
@@ -469,4 +476,5 @@ browser.runtime.onMessage.addListener((message: unknown, sender: unknown) => {
 });
 
 getRootKeyIfAvailable().catch(logError);
+sealPlaintextSettings().catch((error: unknown) => logError('[Background] Settings migration failed', error));
 logInfo('[Background] ready');

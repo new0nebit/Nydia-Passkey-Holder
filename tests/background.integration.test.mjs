@@ -57,6 +57,7 @@ const storeMock = {
   async saveEncryptedRecord() {
     throw new Error('Unexpected saveEncryptedRecord call');
   },
+  async sealPlaintextSettings() {},
   async setRootKey() {
     throw new Error('Unexpected setRootKey call');
   },

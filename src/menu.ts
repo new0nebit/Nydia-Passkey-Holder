@@ -264,9 +264,10 @@ export class Menu {
         .sendMessage({ type: 'getAllCredentialsMetadata' })
         .catch(() => []);
 
+      let settingsFailed = false;
       const [credentialsRaw, settings, iconState] = await Promise.all([
         credentialsPromise,
-        getSettings(),
+        getSettings().catch(() => { settingsFailed = true; return null; }),
         getSiteIcon().catch(() => ({ enabled: false })),
       ]);
       this.settings = settings;
@@ -284,6 +285,15 @@ export class Menu {
 
       if (credentials.length) {
         credentials.forEach((credential) => passkeyList.appendChild(this.passkeyItem(credential, iconState.enabled)));
+      } else if (settingsFailed) {
+        this.stateView(passkeyList, {
+          title: 'Unable to Load Renterd Settings',
+          subtitle: 'Saved settings could not be read. Enter them again to sync',
+          icon: icons.settings,
+          label: 'Renterd Settings',
+          buttonClass: 'button-green',
+          action: () => showRenterdSettings(),
+        });
       } else if (settings) {
         this.stateView(passkeyList, {
           title: 'Ready to Sync Passkeys',
@@ -303,6 +313,7 @@ export class Menu {
           action: () => showRenterdSettings(),
         });
       }
+      if (settingsFailed) notify('error', 'Error', 'Unable to load saved renterd settings.');
     } catch (error) {
       logError('[Menu] render error', error);
       notify('error', 'Error', 'Failed to load passkeys.');

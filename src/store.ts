@@ -41,6 +41,7 @@ let rootKey: CryptoKey | null = null;
 
 const HKDF_METADATA_INFO = new TextEncoder().encode('metadata:v1');
 const HKDF_SECRET_INFO = new TextEncoder().encode('secret:v1');
+const HKDF_SETTINGS_INFO = new TextEncoder().encode('renterd-settings:v1');
 
 async function loadRootKeyFromDB(): Promise<CryptoKey | null> {
   if (rootKey) return rootKey;
@@ -176,49 +177,149 @@ export async function openSecret(uniqueId: string): Promise<SecretPayload> {
 }
 
 // Settings Management
-// Resolves once the settings are committed, so the menu never reports a save
-// that did not happen.
-async function saveSettings(settings: RenterdSettings): Promise<void> {
+const SETTINGS_ID = 'renterdSettings';
+type SettingsRecord = EncryptedEnvelope & { id: typeof SETTINGS_ID; version: 1 };
+
+function isSettingsRecord(value: unknown): value is SettingsRecord {
+  return !!value && typeof value === 'object' &&
+    'id' in value && value.id === SETTINGS_ID &&
+    'version' in value && value.version === 1 &&
+    'iv' in value && typeof value.iv === 'string' &&
+    'data' in value && typeof value.data === 'string';
+}
+
+function isSettings(value: unknown): value is RenterdSettings {
+  return !!value && typeof value === 'object' &&
+    'serverAddress' in value && typeof value.serverAddress === 'string' &&
+    'serverPort' in value && typeof value.serverPort === 'number' &&
+    Number.isInteger(value.serverPort) && value.serverPort > 0 && value.serverPort <= 65535 &&
+    'password' in value && typeof value.password === 'string' &&
+    'bucketName' in value && typeof value.bucketName === 'string' &&
+    (!('serverProtocol' in value) || value.serverProtocol === undefined ||
+      value.serverProtocol === 'http' || value.serverProtocol === 'https');
+}
+
+function isPlaintextSettings(value: unknown): value is RenterdSettings {
+  return isSettings(value) && !('version' in value || 'iv' in value || 'data' in value);
+}
+
+// Do not persist extra fields received through messaging or an older record.
+function settingsFields({ serverAddress, serverPort, password, bucketName, serverProtocol }: RenterdSettings) {
+  return { serverAddress, serverPort, password, bucketName, ...(serverProtocol ? { serverProtocol } : {}) };
+}
+
+async function sealSettings(settings: RenterdSettings): Promise<SettingsRecord> {
+  if (!isSettings(settings)) throw new Error('Invalid renterd settings');
+  const key = await deriveAesKey(HKDF_SETTINGS_INFO);
+  const envelope = await sealEnvelope(key, settingsFields(settings));
+  return { id: SETTINGS_ID, version: 1, ...envelope };
+}
+
+async function openSettings(record: SettingsRecord): Promise<RenterdSettings> {
+  const key = await deriveAesKey(HKDF_SETTINGS_INFO);
+  try {
+    if (base64UrlDecode(record.iv).length !== 12) throw new Error('Invalid IV');
+    const settings = await openEnvelope<unknown>(key, record);
+    if (!isSettings(settings)) throw new Error('Invalid settings payload');
+    return settingsFields(settings);
+  } catch {
+    // Never treat damaged ciphertext or a wrong key as missing settings.
+    throw new Error('Unable to decrypt renterd settings');
+  }
+}
+
+async function readSettingsRecord(): Promise<unknown> {
   const db = await openDB();
-  await new Promise<void>((resolve, reject) => {
-    const transaction = db.transaction(SETTINGS_STORE, 'readwrite');
-    transaction.objectStore(SETTINGS_STORE).put({ ...settings, id: 'renterdSettings' });
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error ?? new Error('Failed to save settings'));
-    transaction.onabort = () => reject(transaction.error ?? new Error('Failed to save settings'));
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(SETTINGS_STORE, 'readonly');
+    const request = transaction.objectStore(SETTINGS_STORE).get(SETTINGS_ID);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error('Failed to read renterd settings'));
+    transaction.oncomplete = () => db.close();
+    transaction.onabort = () => {
+      db.close();
+      reject(transaction.error ?? new Error('Failed to read renterd settings'));
+    };
   });
 }
 
-// Records a detected protocol, unless the address or port changed meanwhile.
+function sameSettingsRecord(current: unknown, expected: SettingsRecord | RenterdSettings): boolean {
+  if (isSettingsRecord(expected)) {
+    return isSettingsRecord(current) && current.iv === expected.iv && current.data === expected.data;
+  }
+  return isPlaintextSettings(current) &&
+    current.serverAddress === expected.serverAddress && current.serverPort === expected.serverPort &&
+    current.password === expected.password && current.bucketName === expected.bucketName &&
+    current.serverProtocol === expected.serverProtocol;
+}
+
+// Crypto runs before opening the transaction. The comparison and replacement
+// run together, so migration and protocol detection cannot overwrite a save.
+async function writeSettingsRecord(
+  record: SettingsRecord,
+  expected?: SettingsRecord | RenterdSettings,
+): Promise<boolean> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(SETTINGS_STORE, 'readwrite');
+    const store = transaction.objectStore(SETTINGS_STORE);
+    let written = false;
+    const put = () => { store.put(record); written = true; };
+    if (expected) {
+      const request = store.get(SETTINGS_ID);
+      request.onsuccess = () => {
+        if (sameSettingsRecord(request.result, expected)) put();
+      };
+    } else {
+      put();
+    }
+    transaction.oncomplete = () => { db.close(); resolve(written); };
+    transaction.onabort = () => {
+      db.close();
+      reject(transaction.error ?? new Error('Failed to save renterd settings'));
+    };
+  });
+}
+
+async function saveSettings(settings: RenterdSettings): Promise<void> {
+  await writeSettingsRecord(await sealSettings(settings));
+}
+
+async function loadSettings(): Promise<{ settings: RenterdSettings; record: SettingsRecord } | null> {
+  for (;;) {
+    const record = await readSettingsRecord();
+    if (record === undefined) return null;
+    if (isSettingsRecord(record)) return { settings: await openSettings(record), record };
+    if (!isPlaintextSettings(record)) throw new Error('Unsupported or damaged renterd settings format');
+
+    const settings = settingsFields(record);
+    const sealed = await sealSettings(settings);
+    if (await writeSettingsRecord(sealed, record)) return { settings, record: sealed };
+    // A concurrent write won. Read its settings instead of returning stale data.
+  }
+}
+
+// Do not publish a protocol detected with settings that have since changed,
+// nor replace one already saved: an older detection may finish later.
 export async function saveServerProtocol(
   settings: RenterdSettings,
   serverProtocol: 'http' | 'https',
 ): Promise<void> {
-  const db = await openDB();
-  await new Promise<void>((resolve, reject) => {
-    const transaction = db.transaction(SETTINGS_STORE, 'readwrite');
-    const store = transaction.objectStore(SETTINGS_STORE);
-    const request = store.get('renterdSettings') as IDBRequest<RenterdSettings | undefined>;
-    request.onsuccess = () => {
-      const current = request.result;
-      if (current?.serverAddress !== settings.serverAddress || current.serverPort !== settings.serverPort) return;
-      store.put({ ...current, serverProtocol, id: 'renterdSettings' });
-    };
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error ?? new Error('Failed to save settings'));
-    transaction.onabort = () => reject(transaction.error ?? new Error('Failed to save settings'));
-  });
+  const current = await loadSettings();
+  if (!current || current.settings.serverProtocol || current.settings.serverAddress !== settings.serverAddress ||
+    current.settings.serverPort !== settings.serverPort || current.settings.password !== settings.password) return;
+  const sealed = await sealSettings({ ...current.settings, serverProtocol });
+  await writeSettingsRecord(sealed, current.record);
 }
 
 export async function getSettings(): Promise<RenterdSettings | null> {
-  const db = await openDB();
-  return new Promise<RenterdSettings | null>((resolve) => {
-    db
-      .transaction(SETTINGS_STORE, 'readonly')
-      .objectStore(SETTINGS_STORE)
-      .get('renterdSettings').onsuccess = (event) =>
-        resolve((event.target as IDBRequest<RenterdSettings>).result ?? null);
-  });
+  return (await loadSettings())?.settings ?? null;
+}
+
+// Migrate on startup too, without waiting for the user to open the menu.
+export async function sealPlaintextSettings(): Promise<void> {
+  const record = await readSettingsRecord();
+  if (record !== undefined && !isSettingsRecord(record)) await loadSettings();
 }
 
 // Stored Credential Management
@@ -389,7 +490,7 @@ export async function handleMessageInBackground(message: BackgroundMessage): Pro
         return getAllCredentialsMetadata();
 
       case 'getSettings':
-        return getSettings();
+        return await getSettings();
 
       case 'saveSettings':
         if (!message.settings) return { error: 'Missing settings' };
