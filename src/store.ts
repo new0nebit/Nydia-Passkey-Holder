@@ -46,12 +46,16 @@ async function loadRootKeyFromDB(): Promise<CryptoKey | null> {
   if (rootKey) return rootKey;
 
   const db = await openDB();
-  const rootKeyEntry = await new Promise<{ key?: CryptoKey } | undefined>((resolve) => {
-    db
-      .transaction(SETTINGS_STORE, 'readonly')
-      .objectStore(SETTINGS_STORE)
-      .get('rootKey').onsuccess = (event) =>
-        resolve((event.target as IDBRequest<{ key?: CryptoKey }>).result);
+  const rootKeyEntry = await new Promise<{ key?: CryptoKey } | undefined>((resolve, reject) => {
+    const transaction = db.transaction(SETTINGS_STORE, 'readonly');
+    const request = transaction.objectStore(SETTINGS_STORE).get('rootKey') as IDBRequest<{ key?: CryptoKey } | undefined>;
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error('Failed to read encryption key'));
+    transaction.oncomplete = () => db.close();
+    transaction.onabort = () => {
+      db.close();
+      reject(transaction.error ?? new Error('Failed to read encryption key'));
+    };
   });
 
   if (rootKeyEntry?.key) {
@@ -74,11 +78,14 @@ export async function getRootKeyIfAvailable(): Promise<CryptoKey | null> {
 // Background-only: stores rootKey in IndexedDB
 export async function setRootKey(key: CryptoKey): Promise<void> {
   const db = await openDB();
-  await new Promise<void>((resolve) => {
-    db
-      .transaction(SETTINGS_STORE, 'readwrite')
-      .objectStore(SETTINGS_STORE)
-      .put({ id: 'rootKey', key }).onsuccess = () => resolve();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(SETTINGS_STORE, 'readwrite');
+    transaction.objectStore(SETTINGS_STORE).put({ id: 'rootKey', key });
+    transaction.oncomplete = () => { db.close(); resolve(); };
+    transaction.onabort = () => {
+      db.close();
+      reject(transaction.error ?? new Error('Failed to save encryption key'));
+    };
   });
   rootKey = key;
   logDebug('[Store] rootKey persisted');
