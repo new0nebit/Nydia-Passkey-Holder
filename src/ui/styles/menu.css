@@ -161,12 +161,14 @@ h2 {
   background-color: #c7f4cf;
 }
 
+/* Delete: light red */
 .button-red {
-  background-color: rgb(239, 68, 68);
+  background-color: #fee2e2;
+  color: #b91c1c;
 }
 
 .button-red:hover {
-  background-color: rgb(220, 38, 38);
+  background-color: #fecaca;
 }
 
 /* When uploading is in progress */
@@ -454,14 +456,21 @@ h2 {
     background-color: #3a3a3a;
   }
 
-  .button-indigo,
-  .button-red {
+  .button-indigo {
     background-color: #4a4a4a;
   }
 
-  .button-indigo:hover,
-  .button-red:hover {
+  .button-indigo:hover {
     background-color: #5a5a5a;
+  }
+
+  .button-red {
+    background-color: #5d3a3a;
+    color: #fca5a5;
+  }
+
+  .button-red:hover {
+    background-color: #6b3f3f;
   }
 
   /* Sia buttons stay green */
