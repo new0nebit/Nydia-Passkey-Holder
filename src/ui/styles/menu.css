@@ -133,12 +133,14 @@ h2 {
 /* ================================= */
 /* Buttons */
 /* ================================= */
-.button-green {
-  background-color: rgb(34, 197, 94);
+/* Sia actions: darker Sia logo green */
+.button-sia {
+  background-color: #1e9e36;
+  color: white;
 }
 
-.button-green:hover {
-  background-color: rgb(22, 163, 74);
+.button-sia:hover {
+  background-color: #1a882f;
 }
 
 .button-indigo {
@@ -149,12 +151,14 @@ h2 {
   background-color: rgb(67, 56, 202);
 }
 
-.button-sync {
-  background-color: rgb(22, 163, 74);
+/* Sia states: light Sia green */
+.button-synced {
+  background-color: #dbf8e0;
+  color: #167629;
 }
 
-.button-sync:hover {
-  background-color: rgb(16, 123, 56);
+.button-synced:hover {
+  background-color: #c7f4cf;
 }
 
 .button-red {
@@ -167,8 +171,8 @@ h2 {
 
 /* When uploading is in progress */
 .upload-button.uploading {
-  background-color: rgb(220, 252, 231);
-  color: rgb(22, 163, 74);
+  background-color: #dbf8e0;
+  color: #167629;
   cursor: default;
 }
 
@@ -450,23 +454,29 @@ h2 {
     background-color: #3a3a3a;
   }
 
-  .button-green,
   .button-indigo,
-  .button-sync,
   .button-red {
     background-color: #4a4a4a;
   }
 
-  .button-green:hover,
   .button-indigo:hover,
-  .button-sync:hover,
   .button-red:hover {
     background-color: #5a5a5a;
   }
 
+  /* Sia buttons stay green */
+  .button-synced {
+    background-color: #38553d;
+    color: #36d955;
+  }
+
+  .button-synced:hover {
+    background-color: #3f6646;
+  }
+
   .upload-button.uploading {
-    background-color: #4a4a4a;
-    color: #f0f0f0;
+    background-color: #38553d;
+    color: #36d955;
     cursor: default;
   }
 

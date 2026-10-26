@@ -291,7 +291,7 @@ export class Menu {
           subtitle: 'Saved settings could not be read. Enter them again to sync',
           icon: icons.settings,
           label: 'Renterd Settings',
-          buttonClass: 'button-green',
+          buttonClass: 'button-sia',
           action: () => showRenterdSettings(),
         });
       } else if (settings) {
@@ -300,7 +300,7 @@ export class Menu {
           subtitle: 'Connect to renterd server and retrieve passkeys',
           icon: icons.sia,
           label: 'Sync Passkeys',
-          buttonClass: 'button-sync',
+          buttonClass: 'button-sia',
           action: (button) => this.sync(button),
         });
       } else {
@@ -309,7 +309,7 @@ export class Menu {
           subtitle: 'Configure renterd settings to start syncing',
           icon: icons.settings,
           label: 'Renterd Settings',
-          buttonClass: 'button-green',
+          buttonClass: 'button-sia',
           action: () => showRenterdSettings(),
         });
       }
@@ -465,7 +465,7 @@ export class Menu {
     const backup = createButton(
       passkey.isSynced ? icons.check : icons.sia,
       passkey.isSynced ? 'Synced' : 'Backup to Sia',
-      ['button', passkey.isSynced ? 'button-sync' : 'button-green', 'upload-button'],
+      ['button', passkey.isSynced ? 'button-synced' : 'button-sia', 'upload-button'],
       (button) => this.backup(passkey, button),
     );
     const del = createButton(icons.delete, 'Delete', ['button', 'button-red'], () =>
@@ -514,7 +514,7 @@ export class Menu {
       })) as { success?: boolean; message?: string; error?: string };
       if (response?.success) {
         passkey.isSynced = true;
-        button.classList.replace('button-green', 'button-sync');
+        button.classList.replace('button-sia', 'button-synced');
         updateButtonContent(button, icons.check, 'Synced');
         notify('success', 'Success', response.message ?? 'Uploaded successfully');
         await this.render();
