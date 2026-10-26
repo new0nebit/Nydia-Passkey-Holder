@@ -127,12 +127,14 @@
   background-color: rgb(37, 99, 235);
 }
 
+/* Back: light gray, like the modal's Cancel */
 .button-gray {
-  background-color: rgb(107, 114, 128);
+  background-color: rgb(229, 231, 235);
+  color: rgb(17, 24, 39);
 }
 
 .button-gray:hover {
-  background-color: rgb(75, 85, 99);
+  background-color: rgb(209, 213, 219);
 }
 
 #settings-form .button:disabled {
