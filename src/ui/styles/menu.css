@@ -355,13 +355,14 @@ h2 {
   transition: background-color 0.2s;
 }
 
+/* Confirms deleting a passkey */
 .modal-confirm {
-  background-color: rgb(59, 130, 246);
+  background-color: #dc2626;
   color: white;
 }
 
 .modal-confirm:hover {
-  background-color: rgb(37, 99, 235);
+  background-color: #b91c1c;
 }
 
 .modal-cancel {
@@ -496,21 +497,12 @@ h2 {
     color: #b0b0b0;
   }
 
-  .modal-confirm {
+  .modal-cancel {
     background-color: #4a4a4a;
     color: #f0f0f0;
   }
 
-  .modal-confirm:hover {
-    background-color: #5a5a5a;
-  }
-
-  .modal-cancel {
-    background-color: #616161;
-    color: #f0f0f0;
-  }
-
   .modal-cancel:hover {
-    background-color: #424242;
+    background-color: #5a5a5a;
   }
 }
