@@ -149,7 +149,7 @@
 }
 
 #settings-form .button-indigo[aria-disabled="true"]:hover {
-  background-color: rgb(79, 70, 229);
+  background-color: rgb(224, 231, 255);
 }
 
 .test-connection {
@@ -290,7 +290,7 @@
   }
 
   #settings-form .button-indigo[aria-disabled="true"]:hover {
-    background-color: #4f46e5;
+    background-color: #3b3a66;
   }
 
   .save-hint {
@@ -304,12 +304,12 @@
 
   /* Actions keep their color */
   .button-indigo {
-    color: white;
-    background-color: #4f46e5;
+    color: #c7d2fe;
+    background-color: #3b3a66;
   }
 
   .button-indigo:hover {
-    background-color: #4338ca;
+    background-color: #46447a;
   }
 
   .button-blue {

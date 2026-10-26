@@ -143,12 +143,14 @@ h2 {
   background-color: #1a882f;
 }
 
+/* Test Connection: light indigo, so Save leads */
 .button-indigo {
-  background-color: rgb(79, 70, 229);
+  background-color: rgb(224, 231, 255);
+  color: rgb(67, 56, 202);
 }
 
 .button-indigo:hover {
-  background-color: rgb(67, 56, 202);
+  background-color: rgb(199, 210, 254);
 }
 
 /* Sia states: light Sia green */
