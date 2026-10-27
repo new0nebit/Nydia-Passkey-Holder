@@ -85,7 +85,7 @@ xcodebuild \
 
 2. Launch the app once so Safari registers the extension:
 ```bash
-open "build/xcode/Build/Products/Release/Nydia Passkey Holder.app"
+open "build/xcode/Build/Products/Release/Nydia for Safari.app"
 ```
 
 3. Enable the extension in Safari:
