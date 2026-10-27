@@ -2,7 +2,7 @@
 //  ViewController.swift
 //  Nydia
 //
-//  Created by Oleh N. on 13.04.2025.
+//  Created by Oleh Nypadymka on 13.04.2025.
 //
 
 import Cocoa

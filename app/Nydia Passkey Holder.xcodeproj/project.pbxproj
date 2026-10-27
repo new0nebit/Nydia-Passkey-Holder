@@ -35,7 +35,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		AFD89AEF2DABAB5A00A8A103 /* Nydia Passkey Holder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Nydia Passkey Holder.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		AFD89AEF2DABAB5A00A8A103 /* Nydia for Safari.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Nydia for Safari.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AFD89B0B2DABAB5B00A8A103 /* Nydia Passkey Holder Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Nydia Passkey Holder Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -102,7 +102,7 @@
 		AFD89AF02DABAB5A00A8A103 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				AFD89AEF2DABAB5A00A8A103 /* Nydia Passkey Holder.app */,
+				AFD89AEF2DABAB5A00A8A103 /* Nydia for Safari.app */,
 				AFD89B0B2DABAB5B00A8A103 /* Nydia Passkey Holder Extension.appex */,
 			);
 			name = Products;
@@ -132,7 +132,7 @@
 			packageProductDependencies = (
 			);
 			productName = Nydia;
-			productReference = AFD89AEF2DABAB5A00A8A103 /* Nydia Passkey Holder.app */;
+			productReference = AFD89AEF2DABAB5A00A8A103 /* Nydia for Safari.app */;
 			productType = "com.apple.product-type.application";
 		};
 		AFD89B0A2DABAB5B00A8A103 /* Nydia Passkey Holder Extension */ = {
@@ -269,7 +269,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.3;
 				OTHER_LDFLAGS = (
 					"-framework",
 					SafariServices,
@@ -312,7 +312,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.3;
 				OTHER_LDFLAGS = (
 					"-framework",
 					SafariServices,
@@ -474,7 +474,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Nydia;
+				INFOPLIST_KEY_CFBundleDisplayName = "Nydia for Safari";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -485,7 +485,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.3;
 				OTHER_LDFLAGS = (
 					"-framework",
 					SafariServices,
@@ -493,7 +493,7 @@
 					WebKit,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = me.Nydia.Safari;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "Nydia for Safari";
 				REGISTER_APP_GROUPS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -525,7 +525,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Nydia;
+				INFOPLIST_KEY_CFBundleDisplayName = "Nydia for Safari";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -536,7 +536,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.3;
 				OTHER_LDFLAGS = (
 					"-framework",
 					SafariServices,
@@ -544,7 +544,7 @@
 					WebKit,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = me.Nydia.Safari;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "Nydia for Safari";
 				REGISTER_APP_GROUPS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
