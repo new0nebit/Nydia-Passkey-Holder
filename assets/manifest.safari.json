@@ -4,7 +4,7 @@
   "version": "1.0.3",
   "version_name": "1.0.3",
   "description": "Passkey storage on the Sia network. Hold your passkeys locally with decentralized backup.",
-  "author": "Oleh N.",
+  "author": "Oleh Nypadymka",
   "browser_specific_settings": {
     "safari": {
       "strict_min_version": "17.0"
