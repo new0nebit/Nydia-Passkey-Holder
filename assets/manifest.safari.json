@@ -1,0 +1,59 @@
+{
+  "manifest_version": 3,
+  "name": "Nydia: Passkey Holder",
+  "version": "1.0.0",
+  "version_name": "1.0.0",
+  "description": "Passkey storage on the Sia network. Hold your passkeys locally with decentralized backup.",
+  "author": "Oleh N.",
+  "browser_specific_settings": {
+    "safari": {
+      "strict_min_version": "17.0"
+    }
+  },
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "page": "background.html",
+    "persistent": false
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*/*",
+        "http://localhost/*"
+      ],
+      "js": [
+        "dispatcher.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "injector.js",
+        "icon.png",
+        "popup.html",
+        "popup.js",
+        "popup.css"
+      ],
+      "matches": [
+        "https://*/*",
+        "http://localhost/*"
+      ]
+    }
+  ],
+  "action": {
+    "default_popup": "menu.html",
+    "default_title": "Nydia: Passkey Holder"
+  },
+  "icons": {
+    "128": "icon.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

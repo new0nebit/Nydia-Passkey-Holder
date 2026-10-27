@@ -8,11 +8,11 @@ import CopyWebpackPlugin from 'copy-webpack-plugin';
 export default (env, argv) => {
   const isAnalyze = env && env.analyze;
   const isDevelopment = argv.mode === 'development';
-  const target = env && env.target === 'firefox' ? 'firefox' : 'chrome';
+  const target = ['firefox', 'safari'].includes(env?.target) ? env.target : 'chrome';
   const keepDebugLogs = env?.keepDebug === true || env?.keepDebug === 'true';
 
   // Set output directory based on browser target
-  const outputDir = path.join('extension', target);
+  const outputDir = path.join('build', target);
 
   return {
     entry: {
@@ -88,12 +88,13 @@ export default (env, argv) => {
       }),
       new CopyWebpackPlugin({
         patterns: [
-          // Copy all files from assets except manifests
+          // Copy all files from assets except manifests; only Safari gets the background page
           {
             from: 'assets',
             globOptions: {
               ignore: [
-                '**/manifest.*.json'
+                '**/manifest.*.json',
+                ...(target === 'safari' ? [] : ['**/background.html'])
               ]
             }
           },
