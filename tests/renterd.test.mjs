@@ -4,10 +4,9 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 
-import { createIndexedDB } from './helpers/indexedDB.mjs';
+import { settingsVault as vault } from './helpers/settingsVault.mjs';
 
 const require = createRequire(import.meta.url);
-const base64url = require('../.test-build/utils/base64url.js');
 const logger = { logDebug() {}, logInfo() {}, logWarn() {}, logError() {} };
 const SAVED = { serverAddress: '192.0.2.10', serverPort: 9980, password: 'secret', bucketName: 'passkeys' };
 const SAVED_ORIGINS = ['http://192.0.2.10/*', 'https://192.0.2.10/*'];
@@ -15,6 +14,10 @@ const OLD_ORIGINS = ['http://192.0.2.20/*', 'https://192.0.2.20/*'];
 const MANIFEST_ORIGINS = ['https://*/*', 'http://localhost/*'];
 
 const settle = () => new Promise((resolve) => setTimeout(resolve));
+async function settleUntil(done) {
+  for (let turn = 0; turn < 100 && !done(); turn += 1) await settle();
+  assert.ok(done(), 'Pending operation did not finish');
+}
 
 function load(file, imports, globals = {}, extra = '') {
   const context = {
@@ -230,24 +233,9 @@ async function settingsPage({ browser = browserMock(), fetch = async () => ({ ok
   browser.calls.length = 0;
   const form = list.find((element) => element.tagName === 'form');
   const value = (name) => form.elements.namedItem(name).value;
-  const button = form.find((element) => element.className === 'button button-indigo');
+  const button = form?.find((element) => element.className === 'button button-indigo');
   const keydown = (key) => { for (const [, listener] of [...doc.listeners]) listener({ key }); };
-  return { settings, browser, requests, notices, form, value, button, completed, document: doc, keydown };
-}
-
-// The real store on an in-memory NydiaDB holding the given renterd settings.
-function vault(stored) {
-  const indexedDB = createIndexedDB();
-  const settings = new Map(stored ? [['renterdSettings', { ...stored, id: 'renterdSettings' }]] : []);
-  indexedDB.databases.set('NydiaDB', {
-    version: 4,
-    stores: new Map([
-      ['passkeys', { keyPath: 'uniqueId', data: new Map() }],
-      ['settings', { keyPath: 'id', data: settings }],
-    ]),
-  });
-  const store = load('store', { './logger': logger, './utils/base64url': base64url }, { indexedDB, crypto });
-  return { store, database: indexedDB.databases.get('NydiaDB'), saved: () => settings.get('renterdSettings') };
+  return { settings, browser, requests, notices, form, value, button, completed, document: doc, keydown, list };
 }
 
 function connectBackground(browser, store) {
@@ -350,7 +338,7 @@ test('saving another server takes back access to the previous one only', async (
   // A site the user allowed for passkeys, and the manifest's own patterns.
   const other = ['https://example.com/*', ...MANIFEST_ORIGINS];
   const browser = browserMock({ granted: true, held: [...SAVED_ORIGINS, ...OLD_ORIGINS, ...other] });
-  connectBackground(browser, vault(SAVED).store);
+  connectBackground(browser, (await vault(SAVED)).store);
   const page = await settingsPage({ browser });
   type(page.form, 'serverAddress', '192.0.2.20');
   await submit(page.form);
@@ -360,7 +348,7 @@ test('saving another server takes back access to the previous one only', async (
 
   // The same server keeps its access, and nothing is even looked up.
   const same = browserMock({ granted: true, held: [...SAVED_ORIGINS] });
-  connectBackground(same, vault(SAVED).store);
+  connectBackground(same, (await vault(SAVED)).store);
   const again = await settingsPage({ browser: same });
   type(again.form, 'password', 'changed');
   await submit(again.form);
@@ -370,7 +358,7 @@ test('saving another server takes back access to the previous one only', async (
 
 test('background takes back old access without waiting for the popup to receive the save response', async () => {
   const browser = browserMock({ held: [...SAVED_ORIGINS, ...OLD_ORIGINS, ...MANIFEST_ORIGINS] });
-  const { store, saved } = vault(SAVED);
+  const { store, saved } = await vault(SAVED);
   const send = connectBackground(browser, store);
   let backgroundDone;
   browser.api.runtime.sendMessage = (message) => {
@@ -380,18 +368,18 @@ test('background takes back old access without waiting for the popup to receive 
   };
   void browser.api.runtime.sendMessage({ type: 'saveSettings', settings: { ...SAVED, serverAddress: '192.0.2.20' } });
   assert.equal((await backgroundDone).status, 'ok');
-  assert.equal(saved().serverAddress, '192.0.2.20');
+  assert.equal((await saved()).serverAddress, '192.0.2.20');
   assert.deepEqual(browser.held(), ['https://192.0.2.10/*', ...OLD_ORIGINS, ...MANIFEST_ORIGINS]);
 });
 
 test('background keeps old access on a failed commit and still handles the next save', async () => {
   const browser = browserMock({ held: [...SAVED_ORIGINS] });
-  const { store, database, saved } = vault(SAVED);
+  const { store, database, saved } = await vault(SAVED);
   const send = connectBackground(browser, store);
   database.failCommit = true;
   const settings = { ...SAVED, serverAddress: '192.0.2.20' };
   assert.match((await send({ type: 'saveSettings', settings })).error, /Commit failed/);
-  assert.equal(saved().serverAddress, SAVED.serverAddress);
+  assert.equal((await saved()).serverAddress, SAVED.serverAddress);
   assert.deepEqual(browser.held(), SAVED_ORIGINS);
   assert.ok(!browser.types().includes('remove'));
 
@@ -403,7 +391,7 @@ test('background keeps old access on a failed commit and still handles the next 
 test('background serialises server changes through the previous access cleanup', async () => {
   const last = ['http://192.0.2.30/*', 'https://192.0.2.30/*'];
   const browser = browserMock({ held: [...SAVED_ORIGINS, ...OLD_ORIGINS, ...last] });
-  const { store, saved } = vault(SAVED);
+  const { store, saved } = await vault(SAVED);
   const send = connectBackground(browser, store);
   const remove = browser.api.permissions.remove;
   let started;
@@ -418,11 +406,11 @@ test('background serialises server changes through the previous access cleanup',
   await cleaning;
   const second = send({ type: 'saveSettings', settings: { ...SAVED, serverAddress: '192.0.2.30' } });
   await settle();
-  assert.equal(saved().serverAddress, '192.0.2.20');
+  assert.equal((await saved()).serverAddress, '192.0.2.20');
   browser.api.permissions.remove = remove;
   finish();
   assert.deepEqual((await Promise.all([first, second])).map((result) => result.status), ['ok', 'ok']);
-  assert.equal(saved().serverAddress, '192.0.2.30');
+  assert.equal((await saved()).serverAddress, '192.0.2.30');
   assert.deepEqual(browser.held(), ['https://192.0.2.10/*', 'https://192.0.2.20/*', ...last]);
 });
 
@@ -485,11 +473,11 @@ test('the address takes one form, in lower case, wherever it is saved, asked for
   // Older settings may contain mixed-case host names.
   const mixed = { ...SAVED, serverAddress: 'Renterd.EXAMPLE' };
   const kept = browserMock({ held: [...origins], saved: mixed });
-  connectBackground(kept, vault(mixed).store);
+  connectBackground(kept, (await vault(mixed)).store);
   await submit((await settingsPage({ browser: kept })).form);
   assert.deepEqual(kept.held(), origins);
   const replaced = browserMock({ held: [...origins], saved: mixed });
-  connectBackground(replaced, vault(mixed).store);
+  connectBackground(replaced, (await vault(mixed)).store);
   const changed = await settingsPage({ browser: replaced });
   type(changed.form, 'serverAddress', '192.0.2.10');
   await submit(changed.form);
@@ -749,25 +737,93 @@ test('Test Connection with access tests at once, and a refused prompt keeps Allo
 });
 
 test('background reports settings saved only once committed, and a failed write as an error', async () => {
-  const { store, database, saved } = vault();
+  const { store, database, saved } = await vault();
   assert.equal((await store.handleMessageInBackground({ type: 'saveSettings', settings: SAVED })).status, 'ok');
-  assert.equal(saved().serverAddress, '192.0.2.10');
+  assert.equal((await saved()).serverAddress, '192.0.2.10');
 
   database.failWrites = true;
   const result = await store.handleMessageInBackground({ type: 'saveSettings', settings: { ...SAVED, serverAddress: 'other.example' } });
   assert.match(result.error, /Disk full/);
-  assert.equal(saved().serverAddress, '192.0.2.10');
+  assert.equal((await saved()).serverAddress, '192.0.2.10');
 
   // The write itself succeeds and the commit fails: the save did not happen.
   database.failWrites = false;
   database.failCommit = true;
   const aborted = await store.handleMessageInBackground({ type: 'saveSettings', settings: { ...SAVED, serverAddress: 'other.example' } });
   assert.match(aborted.error, /Commit failed/);
-  assert.equal(saved().serverAddress, '192.0.2.10');
+  assert.equal((await saved()).serverAddress, '192.0.2.10');
+});
+
+test('background migrates plaintext settings at startup without opening the menu', async () => {
+  const { store, record, saved } = await vault(SAVED, { plaintext: true });
+  connectBackground(browserMock(), store);
+  await settleUntil(() => record().version === 1);
+  assert.deepEqual(await saved(), SAVED);
+});
+
+test('unreadable settings open an empty form with a warning, and Save replaces them', async () => {
+  const unreadable = { error: 'Unable to decrypt renterd settings' };
+  const browser = browserMock({ granted: true, saved: unreadable });
+  const page = await settingsPage({ browser });
+  assert.match(page.form.byClass('settings-warning').text, /could not be read/);
+  for (const name of ['serverAddress', 'serverPort', 'password', 'bucketName']) assert.equal(page.value(name), '');
+  assert.ok(inactive(page.button));
+  assert.deepEqual(page.notices, []);
+
+  for (const [name, value] of Object.entries(SAVED)) type(page.form, name, String(value));
+  await submit(page.form);
+  assert.deepEqual({ ...browser.calls.find(([type]) => type === 'saveSettings')[1] }, { ...SAVED, serverProtocol: undefined });
+  assert.equal(page.form.byClass('settings-warning'), null);
+  assert.ok(!inactive(page.button));
+
+  // Retry reads them again, for a failure that has passed.
+  const retried = await settingsPage({ browser: browserMock({ saved: unreadable }) });
+  retried.browser.setSaved(SAVED);
+  retried.form.byClass('settings-warning').button('Retry').onclick();
+  const form = () => retried.list.find((element) => element.tagName === 'form');
+  await settleUntil(() => form()?.elements.namedItem('password').value === SAVED.password);
+  assert.equal(form().byClass('settings-warning'), null);
+});
+
+test('a save replaces settings that cannot be read, through the background', async () => {
+  const { store, record, saved } = await vault(SAVED);
+  record().data = 'A'.repeat(40);
+  const browser = browserMock({ held: [...SAVED_ORIGINS] });
+  const send = connectBackground(browser, store);
+  assert.match((await send({ type: 'getSettings' })).error, /Unable to decrypt/);
+
+  const newer = { ...SAVED, serverAddress: '192.0.2.20' };
+  assert.equal((await send({ type: 'saveSettings', settings: newer })).status, 'ok');
+  assert.deepEqual(await saved(), newer);
+  // The old server is unknown, so its access stays.
+  assert.deepEqual(browser.held(), SAVED_ORIGINS);
+});
+
+test('renterd operations do not log settings, URLs or Authorization headers even with debug logging enabled', async () => {
+  const logs = [];
+  const recordingLogger = { ...logger, logDebug: (...args) => logs.push(args) };
+  const configured = { ...SAVED, password: 'unique-server-password', bucketName: 'unique-backup-bucket', serverProtocol: 'https' };
+  const record = { uniqueId: 'test-passkey', metadata: { iv: 'abc', data: 'def' }, secret: { iv: 'abc', data: 'def' }, isSynced: true };
+  const sia = load('sia', {
+    './logger': recordingLogger,
+    './renterd': {},
+    './store': { async getSettings() { return configured; } },
+  }, {
+    Blob,
+    fetch: async (url) => ({ ok: true, status: 200, json: async () => url.includes('/api/bus/objects/') ? { objects: [] } : record }),
+  });
+  await sia.listPasskeysFromRenterd(configured);
+  assert.equal((await sia.uploadPasskeyDirect(record)).success, true);
+  await sia.downloadPasskeyFromRenterd('test-passkey.passkey', configured);
+  const output = JSON.stringify(logs);
+  assert.ok(logs.length > 0);
+  for (const sensitive of [configured.password, configured.serverAddress, configured.bucketName, 'Authorization', btoa(`username:${configured.password}`)]) {
+    assert.ok(!output.includes(sensitive));
+  }
 });
 
 test('a corrected password does not wait for the check of the old one', async () => {
-  const { store } = vault(SAVED);
+  const { store } = await vault(SAVED);
   const sent = [];
   const answers = [];
   const fetch = (url, options) => {
@@ -776,10 +832,10 @@ test('a corrected password does not wait for the check of the old one', async ()
   };
   const sia = load('sia', { './logger': logger, './renterd': renterd(browserMock(), fetch), './store': store }, { fetch });
   const first = sia.getRenterdSettings();
-  await settle();
+  await settleUntil(() => sent.length === 1);
   await store.handleMessageInBackground({ type: 'saveSettings', settings: { ...SAVED, password: 'corrected' } });
   const second = sia.getRenterdSettings();
-  await settle();
+  await settleUntil(() => sent.length === 2);
   assert.deepEqual(sent, ['username:secret', 'username:corrected']);
 
   for (const answer of answers) answer({ ok: true });
@@ -787,7 +843,7 @@ test('a corrected password does not wait for the check of the old one', async ()
 });
 
 test('background detects a new server protocol once, saves it and shares it', async () => {
-  const { store, saved } = vault(SAVED);
+  const { store, saved } = await vault(SAVED);
   const urls = [];
   const fetch = async (url) => {
     urls.push(url);
@@ -799,13 +855,13 @@ test('background detects a new server protocol once, saves it and shares it', as
   const results = await Promise.all([sia.getRenterdSettings(), sia.getRenterdSettings()]);
   assert.deepEqual(results.map(({ serverProtocol }) => serverProtocol), ['http', 'http']);
   assert.equal(urls.length, 2);
-  assert.equal(saved().serverProtocol, 'http');
+  assert.equal((await saved()).serverProtocol, 'http');
   assert.equal((await sia.getRenterdSettings()).serverProtocol, 'http');
   assert.equal(urls.length, 2);
 });
 
 test('background retries a failed detection and never writes it over newer settings', async () => {
-  const { store } = vault(SAVED);
+  const { store } = await vault(SAVED);
   let online = false;
   const fetch = async () => {
     if (!online) throw new TypeError('offline');
@@ -816,10 +872,10 @@ test('background retries a failed detection and never writes it over newer setti
   online = true;
   assert.equal((await sia.getRenterdSettings()).serverProtocol, 'https');
 
-  const moved = vault({ ...SAVED, serverAddress: 'renterd.example.com' });
+  const moved = await vault({ ...SAVED, serverAddress: 'renterd.example.com' });
   await moved.store.saveServerProtocol(SAVED, 'https');
-  assert.equal(moved.saved().serverProtocol, undefined);
-  assert.equal(moved.saved().serverAddress, 'renterd.example.com');
+  assert.equal((await moved.saved()).serverProtocol, undefined);
+  assert.equal((await moved.saved()).serverAddress, 'renterd.example.com');
 });
 
 test('a rejected password is reported as such, not as an unreachable server', async () => {
@@ -840,12 +896,12 @@ test('a rejected password is reported as such, not as an unreachable server', as
 
   // Background says so too, when detecting and when uploading.
   const rejecting = async () => ({ ok: false, status: 401, statusText: 'Unauthorized' });
-  const { store, saved } = vault(SAVED);
+  const { store, saved } = await vault(SAVED);
   const sia = load('sia', { './logger': logger, './renterd': renterd(browserMock(), rejecting), './store': store }, { fetch: rejecting, Blob });
   await assert.rejects(sia.getRenterdSettings(), /renterd rejected the password/);
-  assert.equal(saved().serverProtocol, undefined);
+  assert.equal((await saved()).serverProtocol, undefined);
 
-  const known = vault({ ...SAVED, serverProtocol: 'http' });
+  const known = await vault({ ...SAVED, serverProtocol: 'http' });
   const upload = load('sia', { './logger': logger, './renterd': renterd(browserMock(), rejecting), './store': known.store }, { fetch: rejecting, Blob });
   const result = await upload.uploadPasskeyDirect({ uniqueId: 'passkey', metadata: {}, secret: {}, isSynced: false });
   assert.equal(result.error, 'Failed to backup passkey: renterd rejected the password.');
