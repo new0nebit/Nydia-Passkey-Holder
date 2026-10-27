@@ -1,6 +1,6 @@
 {
   "name": "Nydia-Passkey-Holder",
-  "version": "1.0.0-beta.2",
+  "version": "1.0.3",
   "description": "Browser extension for decentralized passkey storage on the Sia network.",
   "author": "Oleh N.",
   "license": "MIT",
