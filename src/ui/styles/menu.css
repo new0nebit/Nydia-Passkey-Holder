@@ -133,42 +133,50 @@ h2 {
 /* ================================= */
 /* Buttons */
 /* ================================= */
-.button-green {
-  background-color: rgb(34, 197, 94);
+/* Sia actions: darker Sia logo green */
+.button-sia {
+  background-color: #1e9e36;
+  color: white;
 }
 
-.button-green:hover {
-  background-color: rgb(22, 163, 74);
+.button-sia:hover {
+  background-color: #1a882f;
 }
 
+/* Test Connection: light indigo, so Save leads */
 .button-indigo {
-  background-color: rgb(79, 70, 229);
+  background-color: rgb(224, 231, 255);
+  color: rgb(67, 56, 202);
 }
 
 .button-indigo:hover {
-  background-color: rgb(67, 56, 202);
+  background-color: rgb(199, 210, 254);
 }
 
-.button-sync {
-  background-color: rgb(22, 163, 74);
+/* Sia states: light Sia green */
+.button-synced {
+  background-color: #dbf8e0;
+  color: #167629;
 }
 
-.button-sync:hover {
-  background-color: rgb(16, 123, 56);
+.button-synced:hover {
+  background-color: #c7f4cf;
 }
 
+/* Delete: light red */
 .button-red {
-  background-color: rgb(239, 68, 68);
+  background-color: #fee2e2;
+  color: #b91c1c;
 }
 
 .button-red:hover {
-  background-color: rgb(220, 38, 38);
+  background-color: #fecaca;
 }
 
 /* When uploading is in progress */
 .upload-button.uploading {
-  background-color: rgb(220, 252, 231);
-  color: rgb(22, 163, 74);
+  background-color: #dbf8e0;
+  color: #167629;
   cursor: default;
 }
 
@@ -349,13 +357,14 @@ h2 {
   transition: background-color 0.2s;
 }
 
+/* Confirms deleting a passkey */
 .modal-confirm {
-  background-color: rgb(59, 130, 246);
+  background-color: #dc2626;
   color: white;
 }
 
 .modal-confirm:hover {
-  background-color: rgb(37, 99, 235);
+  background-color: #b91c1c;
 }
 
 .modal-cancel {
@@ -450,23 +459,28 @@ h2 {
     background-color: #3a3a3a;
   }
 
-  .button-green,
-  .button-indigo,
-  .button-sync,
   .button-red {
-    background-color: #4a4a4a;
+    background-color: #5d3a3a;
+    color: #fca5a5;
   }
 
-  .button-green:hover,
-  .button-indigo:hover,
-  .button-sync:hover,
   .button-red:hover {
-    background-color: #5a5a5a;
+    background-color: #6b3f3f;
+  }
+
+  /* Sia buttons stay green */
+  .button-synced {
+    background-color: #38553d;
+    color: #36d955;
+  }
+
+  .button-synced:hover {
+    background-color: #3f6646;
   }
 
   .upload-button.uploading {
-    background-color: #4a4a4a;
-    color: #f0f0f0;
+    background-color: #38553d;
+    color: #36d955;
     cursor: default;
   }
 
@@ -485,21 +499,12 @@ h2 {
     color: #b0b0b0;
   }
 
-  .modal-confirm {
+  .modal-cancel {
     background-color: #4a4a4a;
     color: #f0f0f0;
   }
 
-  .modal-confirm:hover {
-    background-color: #5a5a5a;
-  }
-
-  .modal-cancel {
-    background-color: #616161;
-    color: #f0f0f0;
-  }
-
   .modal-cancel:hover {
-    background-color: #424242;
+    background-color: #5a5a5a;
   }
 }

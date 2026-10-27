@@ -127,12 +127,14 @@
   background-color: rgb(37, 99, 235);
 }
 
+/* Back: light gray, like the modal's Cancel */
 .button-gray {
-  background-color: rgb(107, 114, 128);
+  background-color: rgb(229, 231, 235);
+  color: rgb(17, 24, 39);
 }
 
 .button-gray:hover {
-  background-color: rgb(75, 85, 99);
+  background-color: rgb(209, 213, 219);
 }
 
 #settings-form .button:disabled {
@@ -147,7 +149,7 @@
 }
 
 #settings-form .button-indigo[aria-disabled="true"]:hover {
-  background-color: rgb(79, 70, 229);
+  background-color: rgb(224, 231, 255);
 }
 
 .test-connection {
@@ -288,7 +290,7 @@
   }
 
   #settings-form .button-indigo[aria-disabled="true"]:hover {
-    background-color: #4a4a4a;
+    background-color: #3b3a66;
   }
 
   .save-hint {
@@ -300,15 +302,30 @@
     box-shadow: 0 0 0 2px #2e2e2e, 0 0 0 4px #1976d2;
   }
 
-  .button-indigo,
-  .button-blue,
+  /* Actions keep their color */
+  .button-indigo {
+    color: #c7d2fe;
+    background-color: #3b3a66;
+  }
+
+  .button-indigo:hover {
+    background-color: #46447a;
+  }
+
+  .button-blue {
+    color: white;
+    background-color: #1976d2;
+  }
+
+  .button-blue:hover {
+    background-color: #1565c0;
+  }
+
   .button-gray {
     color: #f0f0f0;
     background-color: #4a4a4a;
   }
 
-  .button-indigo:hover,
-  .button-blue:hover,
   .button-gray:hover {
     background-color: #5a5a5a;
   }

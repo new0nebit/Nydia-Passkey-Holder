@@ -113,7 +113,7 @@ export async function showSettings(): Promise<void> {
 
   const renterd = document.createElement('button');
   renterd.type = 'button';
-  renterd.className = 'button button-blue';
+  renterd.className = 'button button-sia';
   renterd.textContent = 'Renterd Settings';
   renterd.onclick = () => { void showRenterdSettings(); };
 
