@@ -30,10 +30,9 @@ let currentState: PopupState | null = null;
 
 // Create SVG element from string
 function createSvgElement(svgString: string): SVGElement | null {
-  const template = document.createElement('template');
-  template.innerHTML = svgString.trim();
-  const svg = template.content.querySelector('svg');
-  return svg ? (svg.cloneNode(true) as SVGElement) : null;
+  const parsed = new DOMParser().parseFromString(svgString, 'text/html');
+  const svg = parsed.querySelector('svg');
+  return svg ? document.importNode(svg, true) : null;
 }
 
 // Create element helper
