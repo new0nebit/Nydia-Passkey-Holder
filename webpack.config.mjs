@@ -77,6 +77,9 @@ export default (env, argv) => {
     output: {
       filename: '[name].js',
       path: path.resolve(process.cwd(), outputDir),
+      environment: {
+        globalThis: true,
+      },
     },
     plugins: [
       // Modify MiniCssExtractPlugin to create popup.css and menu.css
