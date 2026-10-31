@@ -97,6 +97,7 @@ export default (env, argv) => {
             globOptions: {
               ignore: [
                 '**/manifest.*.json',
+                '**/.DS_Store',
                 ...(target === 'safari' ? [] : ['**/background.html'])
               ]
             }
