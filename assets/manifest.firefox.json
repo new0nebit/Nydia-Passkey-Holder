@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Nydia: Passkey Holder",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Passkey storage on the Sia network. Hold your passkeys locally with decentralized backup.",
   "author": "Oleh Nypadymka",
   "browser_specific_settings": {
