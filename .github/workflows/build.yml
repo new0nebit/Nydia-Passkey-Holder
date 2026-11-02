@@ -120,6 +120,34 @@ jobs:
       - name: Run build
         run: npm run build
 
+  safari:
+    name: Build Safari App (macOS)
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: macos-latest
+    needs: check
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the Safari extension
+        run: npm run build:safari
+
+      - name: Build the Safari app
+        run: |
+          xcodebuild -version
+          xcodebuild -project "app/Nydia Passkey Holder.xcodeproj" -scheme "Nydia Passkey Holder" \
+            -configuration Release -destination "generic/platform=macOS" \
+            -derivedDataPath build/xcode CODE_SIGNING_ALLOWED=NO build
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
