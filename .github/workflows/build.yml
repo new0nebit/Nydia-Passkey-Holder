@@ -17,7 +17,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     outputs:
-      CLEAN_TAG: ${{ steps.extract_version.outputs.CLEAN_TAG }}
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout repository
@@ -39,26 +39,33 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Read the version
+        id: version
+        shell: bash
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          if [[ "$GITHUB_REF" == refs/tags/v* && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::The tag is $GITHUB_REF_NAME, but package.json says $version."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Install dependencies
         run: npm ci
 
       - name: Run build
         run: npm run build
 
-      - name: Extract version
-        id: extract_version
-        run: |
-          echo "CLEAN_TAG=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-
       - name: Create extension archives (Ubuntu only)
         if: matrix.os == 'ubuntu-latest'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          mkdir Nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}
-          mkdir Nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}
-          cp -r build/chrome/* Nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}/
-          cp -r build/firefox/* Nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}/
-          zip -r Nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip Nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}
-          zip -r Nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip Nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}
+          for browser in chrome firefox; do
+            mkdir "Nydia-$browser-v$VERSION"
+            cp -r "build/$browser/"* "Nydia-$browser-v$VERSION/"
+            zip -r "Nydia-$browser-v$VERSION.zip" "Nydia-$browser-v$VERSION"
+          done
 
       - name: Upload artifacts (Ubuntu only)
         if: matrix.os == 'ubuntu-latest'
@@ -66,8 +73,8 @@ jobs:
         with:
           name: extensions
           path: |
-            Nydia-chrome-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip
-            Nydia-firefox-v${{ steps.extract_version.outputs.CLEAN_TAG }}.zip
+            Nydia-chrome-v${{ steps.version.outputs.version }}.zip
+            Nydia-firefox-v${{ steps.version.outputs.version }}.zip
           if-no-files-found: error
 
   release:
@@ -93,7 +100,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-          VERSION: ${{ needs.build.outputs.CLEAN_TAG }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           files=("Nydia-chrome-v$VERSION.zip" "Nydia-firefox-v$VERSION.zip")
           prerelease=()
