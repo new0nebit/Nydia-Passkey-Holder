@@ -25,6 +25,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check that the tag is on main
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::$GITHUB_REF_NAME points to a commit that is not on main."
+            exit 1
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
@@ -67,6 +76,9 @@ jobs:
     needs: build
     permissions:
       contents: write
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
 
     steps:
       - name: Download artifacts
@@ -76,12 +88,23 @@ jobs:
           path: .
 
       - name: Create or update the draft release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ github.ref_name }}
-          draft: true
-          files: |
-            Nydia-chrome-v${{ needs.build.outputs.CLEAN_TAG }}.zip
-            Nydia-firefox-v${{ needs.build.outputs.CLEAN_TAG }}.zip
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.build.outputs.CLEAN_TAG }}
+        run: |
+          files=("Nydia-chrome-v$VERSION.zip" "Nydia-firefox-v$VERSION.zip")
+          prerelease=()
+          if [[ "$TAG" == *-* ]]; then prerelease=(--prerelease); fi
+          state=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
+            --jq '.[] | select(.tag_name == env.TAG) | if .draft then "draft" else "published" end')
+          case "$state" in
+            '') gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes '' "${prerelease[@]}" "${files[@]}" ;;
+            draft)
+              gh release upload "$TAG" "${files[@]}" --clobber
+              if [[ ${#prerelease[@]} -gt 0 ]]; then gh release edit "$TAG" "${prerelease[@]}"; fi ;;
+            published) echo "::notice::$TAG is already published, so its release stays unchanged." ;;
+            *) echo "::error::More than one release uses $TAG."; exit 1 ;;
+          esac
