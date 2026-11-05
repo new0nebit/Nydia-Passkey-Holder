@@ -20,6 +20,8 @@ jobs:
     needs: ci
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     concurrency:
       group: release-${{ github.ref }}
       cancel-in-progress: false
@@ -30,6 +32,13 @@ jobs:
         with:
           name: extensions
           path: .
+
+      - name: Attest the release files
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            Nydia-chrome-v${{ needs.ci.outputs.version }}.zip
+            Nydia-firefox-v${{ needs.ci.outputs.version }}.zip
 
       - name: Create or update the draft release
         shell: bash
