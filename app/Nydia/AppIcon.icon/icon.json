@@ -1,0 +1,78 @@
+{
+  "fill-specializations" : [
+    {
+      "value" : {
+        "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "automatic-gradient" : "srgb:0.23529,0.30196,0.25098,1.00000"
+      }
+    }
+  ],
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "hidden-specializations" : [
+            {
+              "value" : false
+            },
+            {
+              "appearance" : "dark",
+              "value" : true
+            }
+          ],
+          "image-name" : "leaf.png",
+          "name" : "Leaf",
+          "position" : {
+            "scale" : 0.7106,
+            "translation-in-points" : [
+              0,
+              3.2
+            ]
+          }
+        },
+        {
+          "glass" : false,
+          "hidden-specializations" : [
+            {
+              "value" : true
+            },
+            {
+              "appearance" : "dark",
+              "value" : false
+            }
+          ],
+          "image-name" : "leaf-dark.png",
+          "name" : "Leaf (dark)",
+          "position" : {
+            "scale" : 0.7106,
+            "translation-in-points" : [
+              0,
+              3.2
+            ]
+          }
+        }
+      ],
+      "lighting" : "combined",
+      "shadow" : {
+        "kind" : "none",
+        "opacity" : 0.5
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "macOS"
+    ]
+  }
+}
