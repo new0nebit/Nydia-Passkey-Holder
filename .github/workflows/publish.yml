@@ -18,6 +18,7 @@ jobs:
     name: Build Safari DMG (macOS)
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: macos-latest
+    timeout-minutes: 60
     needs: ci
     environment: release-signing
     permissions:
@@ -27,22 +28,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - name: Download the Safari extension
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          node-version: '24'
+          name: safari-extension
+          path: build/safari
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build the Safari extension
-        run: npm run build:safari
+      - name: Compile and test the disk image tool
+        run: |
+          xcrun swiftc -swift-version 6 -module-cache-path "$RUNNER_TEMP/dmg-swift-modules" app/DMG/*.swift -o "$RUNNER_TEMP/nydia-dmg"
+          xcrun swiftc -swift-version 6 -module-cache-path "$RUNNER_TEMP/dmg-swift-modules" -D DMG_TESTS app/DMG/*.swift app/DMG/tests/*.swift -o "$RUNNER_TEMP/nydia-dmg-tests"
+          "$RUNNER_TEMP/nydia-dmg-tests"
 
       - name: Import the Developer ID certificate
         env:
           DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
           DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
         run: |
+          umask 077
           KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
           trap 'rm -f "$RUNNER_TEMP/developer-id.p12"' EXIT
@@ -94,57 +97,75 @@ jobs:
             -exportPath "$RUNNER_TEMP/export"
 
       - name: Create the disk image
+        timeout-minutes: 10
         env:
           VERSION: ${{ needs.ci.outputs.version }}
-        run: |
-          DMG="Nydia-safari-v$VERSION.dmg"
-          mkdir "$RUNNER_TEMP/dmg"
-          ditto "$RUNNER_TEMP/export/Nydia for Safari.app" "$RUNNER_TEMP/dmg/Nydia for Safari.app"
-          ln -s /Applications "$RUNNER_TEMP/dmg/Applications"
-          hdiutil create -volname "Nydia for Safari" -srcfolder "$RUNNER_TEMP/dmg" -format UDZO -ov "$DMG"
-          codesign --sign "Developer ID Application" --timestamp "$DMG"
+        run: '"$RUNNER_TEMP/nydia-dmg" build "$RUNNER_TEMP/export/Nydia for Safari.app" "Nydia-safari-v$VERSION.dmg" app/DMG/VolumeIcon.icns'
+
+      - name: Check the disk image and its Finder window
+        timeout-minutes: 5
+        env:
+          VERSION: ${{ needs.ci.outputs.version }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: '"$RUNNER_TEMP/nydia-dmg" check "Nydia-safari-v$VERSION.dmg" app/DMG/VolumeIcon.icns --team-id "$APPLE_TEAM_ID"'
+
+      - name: Sign the disk image
+        env:
+          VERSION: ${{ needs.ci.outputs.version }}
+        run: codesign --sign "Developer ID Application" --timestamp "Nydia-safari-v$VERSION.dmg"
+
+      - name: Remove the signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
 
       - name: Notarize the disk image
+        timeout-minutes: 35
         env:
           VERSION: ${{ needs.ci.outputs.version }}
           ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
           ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
           ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
         run: |
+          umask 077
           DMG="Nydia-safari-v$VERSION.dmg"
-          KEY="$RUNNER_TEMP/AuthKey_$ASC_API_KEY_ID.p8"
+          KEY="$RUNNER_TEMP/notary-key.p8"
           trap 'rm -f "$KEY"' EXIT
           printf '%s\n' "$ASC_API_KEY_P8" > "$KEY"
+          unset ASC_API_KEY_P8
           AUTH=(--key "$KEY" --key-id "$ASC_API_KEY_ID" --issuer "$ASC_API_ISSUER_ID")
-          xcrun notarytool submit "$DMG" "${AUTH[@]}" --wait --output-format json > "$RUNNER_TEMP/notary.json" || true
-          ID="$(plutil -extract id raw -o - "$RUNNER_TEMP/notary.json")"
-          STATUS="$(plutil -extract status raw -o - "$RUNNER_TEMP/notary.json")"
-          echo "Notarization $ID: $STATUS"
+          JSON="$RUNNER_TEMP/notary.json"
+          for attempt in 1 2 3; do
+            xcrun notarytool submit "$DMG" "${AUTH[@]}" --no-wait --output-format json > "$JSON" || true
+            ID="$(plutil -extract id raw -o - "$JSON" 2>/dev/null || true)"
+            if [[ -n "$ID" ]]; then break; fi
+            if (( attempt == 3 )); then echo '::error::Notary upload failed after three attempts.'; exit 1; fi
+            sleep 15
+          done
+          for attempt in 1 2 3; do
+            xcrun notarytool wait "$ID" "${AUTH[@]}" --timeout 10m --output-format json > "$JSON" || true
+            STATUS="$(plutil -extract status raw -o - "$JSON" 2>/dev/null || true)"
+            echo "Notarization $ID (wait $attempt/3): ${STATUS:-no response}"
+            case "$STATUS" in Accepted|Invalid|Rejected) break ;; esac
+            if (( attempt < 3 )); then sleep 15; fi
+          done
           if [ "$STATUS" != "Accepted" ]; then
-            xcrun notarytool log "$ID" "${AUTH[@]}"
+            xcrun notarytool log "$ID" "${AUTH[@]}" || true
             exit 1
           fi
-          xcrun stapler staple "$DMG"
+          for attempt in 1 2 3 4 5; do
+            if xcrun stapler staple "$DMG"; then break; fi
+            if (( attempt == 5 )); then echo '::error::Stapling failed after five attempts.'; exit 1; fi
+            sleep 15
+          done
+          xcrun stapler validate "$DMG"
           spctl --assess --type open --context context:primary-signature --verbose "$DMG"
 
-      - name: Check the app in the disk image
+      - name: Check the final disk image
         env:
           VERSION: ${{ needs.ci.outputs.version }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          DMG="Nydia-safari-v$VERSION.dmg"
-          MOUNT="$(mktemp -d "$RUNNER_TEMP/dmg.XXXXXX")"
-          hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$MOUNT" "$DMG"
-          trap 'hdiutil detach "$MOUNT" -quiet || hdiutil detach "$MOUNT" -force -quiet' EXIT
-          APP="$MOUNT/Nydia for Safari.app"
-          codesign --verify --deep --strict --verbose=2 "$APP"
-          codesign --verify --strict --verbose=2 \
-            -R="anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = \"$APPLE_TEAM_ID\" and identifier \"me.Nydia.Safari\"" \
-            "$APP"
-
-      - name: Remove the signing keychain
-        if: always()
-        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+        timeout-minutes: 5
+        run: '"$RUNNER_TEMP/nydia-dmg" check "Nydia-safari-v$VERSION.dmg" app/DMG/VolumeIcon.icns --team-id "$APPLE_TEAM_ID" --skip-finder'
 
       - name: Upload the disk image
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

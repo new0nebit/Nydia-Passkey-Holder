@@ -106,6 +106,14 @@ jobs:
             Nydia-firefox-v${{ steps.version.outputs.version }}.zip
           if-no-files-found: error
 
+      - name: Upload the Safari extension
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: safari-extension
+          path: build/safari
+          if-no-files-found: error
+
   windows:
     name: Build Extensions (Windows)
     if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -140,6 +148,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compile and test the disk image tool
+        run: |
+          xcrun swiftc -swift-version 6 -module-cache-path "$RUNNER_TEMP/dmg-swift-modules" -D DMG_TESTS app/DMG/*.swift app/DMG/tests/*.swift -o "$RUNNER_TEMP/nydia-dmg-tests"
+          "$RUNNER_TEMP/nydia-dmg-tests"
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
