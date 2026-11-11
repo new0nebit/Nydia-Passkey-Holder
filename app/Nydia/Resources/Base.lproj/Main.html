@@ -10,7 +10,10 @@
     <script src="../Script.js" defer></script>
 </head>
 <body>
-    <img src="../Icon.png" width="128" height="128" alt="Nydia Icon">
+    <picture>
+        <source srcset="../Icon-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../Icon.png" width="128" height="128" alt="Nydia Icon">
+    </picture>
     <p class="state-unknown">You can turn on Nydia’s extension in Safari Extensions preferences.</p>
     <p class="state-on">Nydia’s extension is currently on. You can turn it off in Safari Extensions preferences.</p>
     <p class="state-off">Nydia’s extension is currently off. You can turn it on in Safari Extensions preferences.</p>

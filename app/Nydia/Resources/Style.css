@@ -40,6 +40,10 @@ body.state-off :is(.state-on, .state-unknown) {
     display: none;
 }
 
+picture img {
+    display: block;
+}
+
 button {
     font-size: 1em;
 }
