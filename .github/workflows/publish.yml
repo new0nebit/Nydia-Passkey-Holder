@@ -14,10 +14,170 @@ jobs:
     permissions:
       contents: read
 
+  dmg:
+    name: Build Safari DMG (macOS)
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-latest
+    timeout-minutes: 60
+    needs: ci
+    environment: release-signing
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the Safari extension
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: safari-extension
+          path: build/safari
+
+      - name: Compile and test the disk image tool
+        run: |
+          xcrun swiftc -swift-version 6 -module-cache-path "$RUNNER_TEMP/dmg-swift-modules" app/DMG/*.swift -o "$RUNNER_TEMP/nydia-dmg"
+          xcrun swiftc -swift-version 6 -module-cache-path "$RUNNER_TEMP/dmg-swift-modules" -D DMG_TESTS app/DMG/*.swift app/DMG/tests/*.swift -o "$RUNNER_TEMP/nydia-dmg-tests"
+          "$RUNNER_TEMP/nydia-dmg-tests"
+
+      - name: Import the Developer ID certificate
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          umask 077
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          trap 'rm -f "$RUNNER_TEMP/developer-id.p12"' EXIT
+          echo "$DEVELOPER_ID_P12" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$KEYCHAIN" -P "$DEVELOPER_ID_P12_PASSWORD" -f pkcs12 -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+      - name: Archive the app
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcodebuild archive \
+            -project "app/Nydia Passkey Holder.xcodeproj" \
+            -scheme "Nydia Passkey Holder" \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -archivePath "$RUNNER_TEMP/Nydia.xcarchive" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
+
+      - name: Export the app
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>developer-id</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>signingCertificate</key>
+            <string>Developer ID Application</string>
+            <key>teamID</key>
+            <string>$APPLE_TEAM_ID</string>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Nydia.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export"
+
+      - name: Create the disk image
+        timeout-minutes: 10
+        env:
+          VERSION: ${{ needs.ci.outputs.version }}
+        run: '"$RUNNER_TEMP/nydia-dmg" build "$RUNNER_TEMP/export/Nydia for Safari.app" "Nydia-safari-v$VERSION.dmg" app/DMG/VolumeIcon.icns'
+
+      - name: Check the disk image and its Finder window
+        timeout-minutes: 5
+        env:
+          VERSION: ${{ needs.ci.outputs.version }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: '"$RUNNER_TEMP/nydia-dmg" check "Nydia-safari-v$VERSION.dmg" app/DMG/VolumeIcon.icns --team-id "$APPLE_TEAM_ID"'
+
+      - name: Sign the disk image
+        env:
+          VERSION: ${{ needs.ci.outputs.version }}
+        run: codesign --sign "Developer ID Application" --timestamp "Nydia-safari-v$VERSION.dmg"
+
+      - name: Remove the signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+
+      - name: Notarize the disk image
+        timeout-minutes: 35
+        env:
+          VERSION: ${{ needs.ci.outputs.version }}
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+        run: |
+          umask 077
+          DMG="Nydia-safari-v$VERSION.dmg"
+          KEY="$RUNNER_TEMP/notary-key.p8"
+          trap 'rm -f "$KEY"' EXIT
+          printf '%s\n' "$ASC_API_KEY_P8" > "$KEY"
+          unset ASC_API_KEY_P8
+          AUTH=(--key "$KEY" --key-id "$ASC_API_KEY_ID" --issuer "$ASC_API_ISSUER_ID")
+          JSON="$RUNNER_TEMP/notary.json"
+          for attempt in 1 2 3; do
+            xcrun notarytool submit "$DMG" "${AUTH[@]}" --no-wait --output-format json > "$JSON" || true
+            ID="$(plutil -extract id raw -o - "$JSON" 2>/dev/null || true)"
+            if [[ -n "$ID" ]]; then break; fi
+            if (( attempt == 3 )); then echo '::error::Notary upload failed after three attempts.'; exit 1; fi
+            sleep 15
+          done
+          for attempt in 1 2 3; do
+            xcrun notarytool wait "$ID" "${AUTH[@]}" --timeout 10m --output-format json > "$JSON" || true
+            STATUS="$(plutil -extract status raw -o - "$JSON" 2>/dev/null || true)"
+            echo "Notarization $ID (wait $attempt/3): ${STATUS:-no response}"
+            case "$STATUS" in Accepted|Invalid|Rejected) break ;; esac
+            if (( attempt < 3 )); then sleep 15; fi
+          done
+          if [ "$STATUS" != "Accepted" ]; then
+            xcrun notarytool log "$ID" "${AUTH[@]}" || true
+            exit 1
+          fi
+          for attempt in 1 2 3 4 5; do
+            if xcrun stapler staple "$DMG"; then break; fi
+            if (( attempt == 5 )); then echo '::error::Stapling failed after five attempts.'; exit 1; fi
+            sleep 15
+          done
+          xcrun stapler validate "$DMG"
+          spctl --assess --type open --context context:primary-signature --verbose "$DMG"
+
+      - name: Check the final disk image
+        env:
+          VERSION: ${{ needs.ci.outputs.version }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        timeout-minutes: 5
+        run: '"$RUNNER_TEMP/nydia-dmg" check "Nydia-safari-v$VERSION.dmg" app/DMG/VolumeIcon.icns --team-id "$APPLE_TEAM_ID" --skip-finder'
+
+      - name: Upload the disk image
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: safari
+          path: Nydia-safari-v${{ needs.ci.outputs.version }}.dmg
+          if-no-files-found: error
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    needs: ci
+    needs: [ci, dmg]
     permissions:
       contents: write
       id-token: write
@@ -33,12 +193,19 @@ jobs:
           name: extensions
           path: .
 
+      - name: Download the disk image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: safari
+          path: .
+
       - name: Attest the release files
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             Nydia-chrome-v${{ needs.ci.outputs.version }}.zip
             Nydia-firefox-v${{ needs.ci.outputs.version }}.zip
+            Nydia-safari-v${{ needs.ci.outputs.version }}.dmg
 
       - name: Create or update the draft release
         shell: bash
@@ -48,7 +215,7 @@ jobs:
           TAG: ${{ github.ref_name }}
           VERSION: ${{ needs.ci.outputs.version }}
         run: |
-          files=("Nydia-chrome-v$VERSION.zip" "Nydia-firefox-v$VERSION.zip")
+          files=("Nydia-chrome-v$VERSION.zip" "Nydia-firefox-v$VERSION.zip" "Nydia-safari-v$VERSION.dmg")
           prerelease=()
           if [[ "$TAG" == *-* ]]; then prerelease=(--prerelease); fi
           state=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
